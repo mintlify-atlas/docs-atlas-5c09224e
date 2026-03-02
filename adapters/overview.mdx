@@ -1,0 +1,280 @@
+---
+title: 'Adapters Overview'
+description: 'Explore the comprehensive collection of protocol adapters for tracking points, rewards, and engagement across DeFi, gaming, and blockchain ecosystems'
+---
+
+## What are Points Adapters?
+
+The Points Adapters SDK provides a unified collection of 56+ pre-built integrations that fetch and normalize points, rewards, XP, and engagement metrics from leading blockchain protocols. Each adapter follows a consistent interface, making it simple to query user activity across multiple platforms with minimal code.
+
+<Card title="Quick Example" icon="code">
+  ```typescript
+  import etherfi from './adapters/etherfi.ts';
+  
+  const data = await etherfi.fetch('0x...');
+  const total = etherfi.total(data); // Get total points
+  const details = etherfi.data(data); // Get detailed breakdown
+  ```
+</Card>
+
+## Protocol Categories
+
+Our adapter collection spans multiple protocol categories:
+
+<CardGroup cols={2}>
+  <Card title="Liquid Staking & Restaking" icon="water">
+    Track points from LST/LRT protocols
+    - **EtherFi**: Liquid restaking points and multipliers
+    - **Symbiotic**: Restaking rewards across multiple phases
+    - **Karak**: XP tracking by phase
+    - **Kelp DAO**: Staking rewards
+    - **Bedrock**: Liquid staking metrics
+  </Card>
+
+  <Card title="DeFi Protocols" icon="coins">
+    Monitor lending, DEX, and yield platforms
+    - **Dolomite**: Minerals tracking (terminology example)
+    - **Mellow**: DeFi engagement points
+    - **Silo Finance**: Lending protocol rewards
+    - **Resolv**: Stablecoin protocol points
+    - **Superform**: Cross-chain vault points
+  </Card>
+
+  <Card title="Bridges & Interoperability" icon="bridge">
+    Cross-chain activity and rewards
+    - **deBridge**: Multi-season bridge points
+    - **Jumper Exchange**: Aggregator rewards
+    - **Hyperflow**: Cross-chain points
+    - **Swaps.io**: Bridge engagement
+  </Card>
+
+  <Card title="Gaming & Social" icon="gamepad">
+    Track gaming rewards and social engagement
+    - **Galxe**: XP, levels, and gold tracking
+    - **Nansen**: Analytics platform points
+    - **Rainbow**: Wallet engagement rewards
+    - **Hypurr**: Gaming ecosystem points
+  </Card>
+
+  <Card title="Layer 2s & Chains" icon="layer-group">
+    Network-specific points programs
+    - **Taiko**: Trailblazer season tracking
+    - **Sonic**: Network activity points
+    - **Corn**: Chain engagement
+    - **Reya**: Network rewards
+  </Card>
+
+  <Card title="Infrastructure & Tools" icon="screwdriver-wrench">
+    Developer tools and analytics
+    - **Blockscout**: Explorer merits
+    - **Spark**: Infrastructure points
+    - **PRJX**: Project engagement
+    - **Felix**: Tool usage rewards
+  </Card>
+</CardGroup>
+
+## Adapter Structure
+
+Every adapter in the collection follows a standardized export interface:
+
+<Accordion title="AdapterExport Interface">
+  ```typescript
+  interface AdapterExport {
+    // Fetch raw data from protocol API
+    fetch: (address: string) => Promise<any>;
+    
+    // Transform into labeled data breakdown
+    data: (rawData: any) => Record<string, any>;
+    
+    // Calculate aggregate totals
+    total: (rawData: any) => number | Record<string, number>;
+    
+    // User's leaderboard position (optional)
+    rank?: (rawData: any) => number;
+    
+    // Whether rewards are claimable (optional)
+    claimable?: (rawData: any) => boolean;
+    
+    // Deprecation timestamps (optional)
+    deprecated?: () => Record<string, number>;
+    
+    // Supported address types
+    supportedAddressTypes: ('evm' | 'svm')[];
+  }
+  ```
+</Accordion>
+
+### Key Features
+
+<CardGroup cols={3}>
+  <Card title="Multi-Chain Support" icon="globe">
+    EVM and Solana (SVM) address compatibility
+  </Card>
+  
+  <Card title="CORS Handling" icon="shield">
+    Built-in CORS proxy for browser environments
+  </Card>
+  
+  <Card title="Type Safety" icon="check">
+    Full TypeScript support with typed exports
+  </Card>
+</CardGroup>
+
+## Address Type Support
+
+Adapters declare which blockchain address formats they support:
+
+- **EVM**: Ethereum-style hex addresses (`0x...`)
+- **SVM**: Solana base58 addresses
+
+<Accordion title="Multi-Chain Adapter Example">
+  ```typescript
+  // Adapters supporting both EVM and Solana
+  export default {
+    fetch: async (address: string) => {
+      // Auto-detects address type
+      const addressType = requireAddressType(address);
+      // ...
+    },
+    supportedAddressTypes: ['evm', 'svm'],
+  } as AdapterExport;
+  ```
+  
+  **Examples of multi-chain adapters:**
+  - deBridge (EVM + SVM)
+  - Jumper Exchange (EVM + SVM)
+  - Nansen (EVM + SVM)
+</Accordion>
+
+## Featured Adapters
+
+<CardGroup cols={2}>
+  <Card title="EtherFi" icon="ethereum" href="https://github.com/0xPortalLabs/points-adapters/blob/main/adapters/etherfi.ts">
+    **Type:** Liquid Restaking
+    
+    Comprehensive points tracking with seasonal breakdowns:
+    - All Time Points
+    - Current Points  
+    - Last Month Points
+    - Latest 3 Months Points
+    
+    **Supported:** EVM addresses
+  </Card>
+
+  <Card title="deBridge" icon="bridge" href="https://github.com/0xPortalLabs/points-adapters/blob/main/adapters/debridge.ts">
+    **Type:** Cross-Chain Bridge
+    
+    Multi-season tracking with rank and multipliers:
+    - Season 1, 2, 3 points
+    - Active/Final multipliers
+    - NFT bonuses
+    - Claimability detection
+    
+    **Supported:** EVM + Solana addresses
+  </Card>
+
+  <Card title="Galxe" icon="star" href="https://github.com/0xPortalLabs/points-adapters/blob/main/adapters/galxe.ts">
+    **Type:** Social & Questing
+    
+    Gaming-style progression system:
+    - User XP and levels
+    - Gold currency
+    - Username integration
+    
+    **Supported:** EVM addresses
+  </Card>
+
+  <Card title="Symbiotic" icon="layer-group" href="https://github.com/0xPortalLabs/points-adapters/blob/main/adapters/symbiotic.ts">
+    **Type:** Restaking Protocol
+    
+    Advanced points calculation:
+    - Multi-phase points tracking
+    - Decimal normalization
+    - USD deposit tracking
+    
+    **Supported:** EVM addresses
+  </Card>
+</CardGroup>
+
+## Custom Terminology
+
+Adapters support protocol-specific naming conventions beyond "points":
+
+<Accordion title="Example: Dolomite Minerals">
+  Some protocols use unique terminology like "Minerals", "Merits", or "Cred":
+  
+  ```typescript
+  // Dolomite uses "Minerals" instead of "Points"
+  total: (data) => ({
+    Minerals: data.milestones.amount ?? 0
+  }),
+  
+  data: (data) => ({
+    Minerals: {
+      Amount: data.milestones.amount,
+      Rank: data.milestones.rank,
+      Airdrop: data.airdrop?.amount,
+    }
+  })
+  ```
+  
+  When `total` returns a custom label, `data` must use the same top-level key for consistency.
+</Accordion>
+
+## Deprecated Programs
+
+Adapters can mark expired or ended points programs:
+
+<Accordion title="Deprecation Tracking">
+  ```typescript
+  deprecated: () => ({
+    'Season 1': 1729113600,  // Oct 17, 2024 (Unix timestamp)
+    'Season 2': 1763554128,  // Nov 19, 2025
+  })
+  ```
+  
+  This helps users understand which programs are no longer active.
+</Accordion>
+
+## Contributing New Adapters
+
+Want to add support for a new protocol? Follow these steps:
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/0xPortalLabs/points-adapters.git
+   ```
+
+2. **Create your adapter file**
+   ```bash
+   touch adapters/yourprotocol.ts
+   ```
+
+3. **Implement the AdapterExport interface**
+   - `fetch`: Query the protocol's API
+   - `data`: Transform response to labeled breakdown
+   - `total`: Calculate aggregate values
+   - `supportedAddressTypes`: Declare address compatibility
+
+4. **Test your adapter**
+   ```bash
+   deno run -A test.ts adapters/yourprotocol.ts 0x...
+   ```
+
+5. **Submit a pull request**
+
+<Card title="Join the Community" icon="discord" href="https://discord.gg/3z9EUxNSaj">
+  Get help, share feedback, and collaborate with other contributors in our Discord server.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Browse All Adapters" icon="list" href="/adapters/list">
+    View the complete list of 56 adapters with details
+  </Card>
+  
+  <Card title="GitHub Repository" icon="github" href="https://github.com/0xPortalLabs/points-adapters">
+    Explore source code and contribute
+  </Card>
+</CardGroup>

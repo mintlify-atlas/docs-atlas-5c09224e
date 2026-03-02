@@ -1,80 +1,259 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Points Adapters in 5 minutes
 ---
 
-## Get started in three steps
+## Get Up and Running
 
-Get your documentation site running locally and make your first customization.
+This quickstart will help you run your first Points Adapter and understand the output. We'll use the Sonic adapter as an example.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Clone the Repository">
+    First, clone the Points Adapters repository:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    git clone https://github.com/0xPortalLabs/points-adapters.git
+    cd points-adapters
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Install Dependencies">
+    Install dependencies using Deno:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    deno install
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    <Note>
+      Make sure you have [Deno](https://deno.land/) installed. See the [Installation](/installation) page for details.
+    </Note>
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Run Your First Adapter">
+    Test an adapter with a wallet address:
 
-### Step 3: Go live
+    ```bash
+    deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    This command:
+    - Runs the test script with all permissions (`-A`)
+    - Loads the Sonic adapter (`adapters/sonic.ts`)
+    - Queries points for the specified address
+  </Step>
 
-## Next steps
+  <Step title="Understanding the Output">
+    You'll see detailed output including:
 
-Now that you have your docs running, explore these key features:
+    **Points Breakdown Table:**
+    ```
+    ┌─────────────────────────────────┬────────┐
+    │ User Activity Last Detected     │ ...    │
+    │ Sonic Points                    │ 1234.5 │
+    │ Loyalty Multiplier              │ 1.2    │
+    │ Ecosystem Points                │ 500.0  │
+    │ Passive Liquidity Points        │ 300.0  │
+    │ Activity Points                 │ 434.5  │
+    │ Rank                            │ 1523   │
+    └─────────────────────────────────┴────────┘
+    ```
 
-<CardGroup cols={2}>
+    **Total Points:**
+    ```
+    1234.5
+    ```
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    **User Rank:**
+    ```
+    User Rank: 1523rd
+    ```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+    **CORS Status:**
+    ```
+    Does the adapter work in the browser?
+    Is this a good CORS URL?
+    ✓ URL is CORS-compatible
+    ```
+  </Step>
+</Steps>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+## Try More Adapters
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+Now that you've run your first adapter, try testing other protocols:
 
-</CardGroup>
+<CodeGroup>
+```bash ether.fi
+deno run -A test.ts adapters/etherfi.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+```bash Jumper Exchange (Multi-chain)
+deno run -A test.ts adapters/jumperexchange.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+```bash Dolomite
+deno run -A test.ts adapters/dolomite.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+</CodeGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  The Jumper Exchange adapter supports both EVM and Solana addresses. Try it with a Solana address too!
 </Note>
+
+## Using an Adapter in Your Code
+
+Here's how to import and use an adapter programmatically:
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import sonicAdapter from "./adapters/sonic.ts";
+
+// Run the adapter
+const address = "0x3c2573b002cf51e64ab6d051814648eb3a305363";
+const result = await runAdapter(sonicAdapter, address);
+
+// Access the normalized data
+console.log("Total Points:", result.total);
+console.log("User Rank:", result.rank);
+console.log("Detailed Data:", result.data);
+
+// Check if rewards are claimable
+if (result.claimable) {
+  console.log("You have claimable rewards!");
+}
+```
+
+### Result Structure
+
+The `runAdapter` function returns a standardized result:
+
+```typescript
+{
+  // Raw data from the API (for debugging)
+  __data: { /* ... */ },
+  
+  // Normalized detailed breakdown
+  data: {
+    "Sonic Points": 1234.5,
+    "Loyalty Multiplier": 1.2,
+    "Ecosystem Points": 500.0,
+    // ...
+  },
+  
+  // Aggregate total (can be a number or labeled object)
+  total: 1234.5,
+  
+  // User's rank in the leaderboard
+  rank: 1523,
+  
+  // Whether rewards are claimable
+  claimable: false,
+  
+  // Supported address types
+  supportedAddressTypes: ["evm"]
+}
+```
+
+## Working with Different Result Types
+
+Some adapters return labeled points instead of a single number:
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import etherfiAdapter from "./adapters/etherfi.ts";
+
+const result = await runAdapter(etherfiAdapter, "0x...");
+
+// ether.fi returns grouped data
+console.log(result.data);
+/*
+{
+  "All Time Points": {
+    "Loyalty Points": 1000,
+    "Liquid Points": 500,
+    // ...
+  },
+  "Current Points": {
+    "Loyalty Points": 800,
+    "Liquid Points": 400,
+  }
+}
+*/
+
+// Total is also a simple number for ether.fi
+console.log(result.total); // 1200
+```
+
+### Custom Point Terminology
+
+Some protocols use different terminology (e.g., "Minerals" instead of "Points"):
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import dolomiteAdapter from "./adapters/dolomite.ts";
+
+const result = await runAdapter(dolomiteAdapter, "0x...");
+
+// Dolomite uses "Minerals"
+console.log(result.total);
+/*
+{
+  Minerals: 5000
+}
+*/
+
+console.log(result.data);
+/*
+{
+  Minerals: {
+    "Airdrop Amount": 5000,
+    "Level Snapshot": 3
+  }
+}
+*/
+```
+
+## Testing Multiple Addresses
+
+You can test all adapters with multiple addresses using the health check script:
+
+<Steps>
+  <Step title="Configure Addresses">
+    Edit `config.json` in the root directory:
+
+    ```json
+    {
+      "addresses": [
+        "0x3c2573b002cf51e64ab6d051814648eb3a305363",
+        "0xYourOtherAddress..."
+      ],
+      "disabledAdapters": [],
+      "timeout": 30000
+    }
+    ```
+  </Step>
+
+  <Step title="Run Health Check">
+    ```bash
+    deno run -A check-adapters.ts
+    ```
+
+    This will test all adapters with your configured addresses and report any failures.
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Adapters" icon="code" href="/guides/creating-adapter">
+    Learn how to build adapters for new protocols
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/adapter-export">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Address Types" icon="wallet" href="/concepts/address-types">
+    Understand EVM and Solana address support
+  </Card>
+  <Card title="CORS Configuration" icon="globe" href="/concepts/cors-handling">
+    Configure CORS proxy for browser usage
+  </Card>
+</CardGroup>

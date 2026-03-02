@@ -1,0 +1,301 @@
+---
+title: Creating an Adapter
+description: Complete guide to building a points adapter from scratch
+---
+
+An adapter is a piece of code that takes in a wallet address and returns the number of points accumulated or a record of labelled points. This guide walks through creating your own adapter step by step.
+
+## What is an Adapter?
+
+Adapters are TypeScript modules that fetch and normalize points data from protocol APIs. They provide a standardized interface for displaying points across different protocols, even when the underlying APIs vary significantly.
+
+## Creating Your First Adapter
+
+<Steps>
+  <Step title="Import Required Types and Utilities">
+    Every adapter needs to import the `AdapterExport` type and CORS utilities:
+
+    ```ts
+    import type { AdapterExport } from "../utils/adapter.ts";
+    import { maybeWrapCORSProxy } from "../utils/cors.ts";
+    ```
+
+    The `AdapterExport` type ensures your adapter implements the correct interface, while `maybeWrapCORSProxy` handles CORS issues when running in the browser.
+  </Step>
+
+  <Step title="Wrap Your API URL with CORS Proxy">
+    All adapters must target the browser environment. Use `maybeWrapCORSProxy` to handle CORS restrictions:
+
+    ```ts
+    const API_URL = await maybeWrapCORSProxy(
+      "https://www.data-openblocklabs.com/sonic/user-points-stats?wallet_address={address}"
+    );
+    ```
+
+    <Note>
+      The `{address}` placeholder will be replaced with the actual wallet address at runtime.
+    </Note>
+
+    <Warning>
+      Always wrap API URLs with `maybeWrapCORSProxy`. Without this, your adapter will fail when running in the browser due to CORS restrictions.
+    </Warning>
+  </Step>
+
+  <Step title="Implement the Adapter Export">
+    Create the default export with all required functions. Here's the complete Sonic adapter as an example:
+
+    ```ts
+    export default {
+      fetch: async (address: string) => {
+        return await (
+          await fetch(API_URL.replace("{address}", address), {
+            headers: {
+              "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+            },
+          })
+        ).json();
+      },
+      data: (data: Record<string, number>) => ({
+        "User Activity Last Detected": new Date(
+          data.user_activity_last_detected
+        ).toString(),
+        "Sonic Points": data.sonic_points,
+        "Loyalty Multiplier": data.loyalty_multiplier,
+        "Ecosystem Points": data.ecosystem_points,
+        "Passive Liquidity Points": data.passive_liquidity_points,
+        "Activity Points": data.activity_points,
+        Rank: data.rank,
+      }),
+      total: (data: Record<string, number>) => data.sonic_points,
+      rank: (data: { rank: number }) => data.rank,
+      supportedAddressTypes: ["evm"],
+    } as AdapterExport;
+    ```
+  </Step>
+</Steps>
+
+## Understanding Adapter Components
+
+### The `fetch` Function
+
+The `fetch` function retrieves raw data from the protocol's API. It receives a wallet address and returns the API response:
+
+```ts
+fetch: async (address: string) => {
+  return await (
+    await fetch(API_URL.replace("{address}", address), {
+      headers: {
+        "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+      },
+    })
+  ).json();
+}
+```
+
+**Key Points:**
+- The data returned doesn't need to be normalized
+- This raw data is passed to all other adapter functions (`data`, `total`, `rank`, etc.)
+- Always include the User-Agent header for API tracking
+
+### The `data` Function
+
+The `data` function transforms raw API data into a structured, human-readable format:
+
+```ts
+data: (data: Record<string, number>) => ({
+  "User Activity Last Detected": new Date(
+    data.user_activity_last_detected
+  ).toString(),
+  "Sonic Points": data.sonic_points,
+  "Loyalty Multiplier": data.loyalty_multiplier,
+  "Ecosystem Points": data.ecosystem_points,
+  "Passive Liquidity Points": data.passive_liquidity_points,
+  "Activity Points": data.activity_points,
+  Rank: data.rank,
+})
+```
+
+**Returns:** `Record<string, string | number>` of labelled points and metadata
+
+**Purpose:** Provides detailed information displayed in the protocol's detailed view
+
+### The `total` Function
+
+The `total` function returns the aggregate points for a wallet:
+
+```ts
+total: (data: Record<string, number>) => data.sonic_points
+```
+
+**Returns:** Either:
+- A single number for total points: `number`
+- A record of labelled totals: `Record<string, number>` (for multi-season programs)
+
+**Example with multiple seasons (from ether.fi adapter):**
+
+```ts
+total: ({ TotalPointsSummary }) => {
+  let totalCurrentPoints = 0;
+  
+  for (const category in TotalPointsSummary) {
+    const points = TotalPointsSummary[category];
+    if (points?.CurrentPoints) {
+      totalCurrentPoints += points.CurrentPoints;
+    }
+  }
+  
+  return totalCurrentPoints;
+}
+```
+
+### The `rank` Function (Optional)
+
+The `rank` function returns the user's leaderboard position:
+
+```ts
+rank: (data: { rank: number }) => data.rank
+```
+
+**Returns:** `number` representing the user's rank
+
+**Purpose:** Displayed in the leaderboard view
+
+### The `claimable` Function (Optional)
+
+Indicates whether points are claimable or if an airdrop is available:
+
+```ts
+claimable: ({ airdrop }) => Boolean(airdrop)
+```
+
+**Returns:** `boolean` indicating claimability status
+
+### The `supportedAddressTypes` Field
+
+Every adapter **must** declare which address types it supports:
+
+```ts
+supportedAddressTypes: ["evm"]  // or ["svm"] or ["evm", "svm"]
+```
+
+**Address Types:**
+- `"evm"` - Ethereum-style addresses (0x...)
+- `"svm"` - Solana-style base58 addresses
+
+<Warning>
+  The `supportedAddressTypes` field is **required**. The adapter will throw an error if a user tries to query with an unsupported address type.
+</Warning>
+
+## Handling Address Formats
+
+### Address Normalization
+
+EVM addresses can be provided in different formats (lowercase, uppercase, mixed case, checksummed). Your adapter should handle all formats consistently.
+
+**Best Practice:** Normalize addresses in your `fetch` function:
+
+```ts
+import { getAddress } from "viem";
+
+fetch: async (address: string) => {
+  const normalizedAddress = getAddress(address).toLowerCase();
+  const res = await fetch(API_URL.replace("{address}", normalizedAddress));
+  return res.json();
+}
+```
+
+**Alternative using checksumAddress:**
+
+```ts
+import { checksumAddress } from "viem";
+
+fetch: async (address: string) => {
+  address = checksumAddress(address as `0x${string}`);
+  const res = await fetch(AIRDROP_URL.replace("{address}", address));
+  return res.json();
+}
+```
+
+<Note>
+  The test script automatically validates that your adapter returns consistent results across different address formats.
+</Note>
+
+## Complete Example: Sonic Adapter
+
+Here's the complete sonic.ts adapter with all components:
+
+```ts adapters/sonic.ts
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://www.data-openblocklabs.com/sonic/user-points-stats?wallet_address={address}"
+);
+
+/**
+ * API Response Format:
+ * {
+ *   user_activity_last_detected: "2025-01-28T21:19:14.817735+00:00",
+ *   wallet_address: "0xa571af45783cf0461aef7329ec7df3eea8c48a1e",
+ *   sonic_points: 0.0,
+ *   loyalty_multiplier: 0,
+ *   ecosystem_points: 0.0,
+ *   passive_liquidity_points: 0.0,
+ *   activity_points: 0,
+ *   rank: 0,
+ * }
+ */
+export default {
+  fetch: async (address: string) => {
+    return await (
+      await fetch(API_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+  },
+  data: (data: Record<string, number>) => ({
+    "User Activity Last Detected": new Date(
+      data.user_activity_last_detected
+    ).toString(),
+    "Sonic Points": data.sonic_points,
+    "Loyalty Multiplier": data.loyalty_multiplier,
+    "Ecosystem Points": data.ecosystem_points,
+    "Passive Liquidity Points": data.passive_liquidity_points,
+    "Activity Points": data.activity_points,
+    Rank: data.rank,
+  }),
+  total: (data: Record<string, number>) => data.sonic_points,
+  rank: (data: { rank: number }) => data.rank,
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## Multi-Chain Support
+
+If your protocol supports both EVM and Solana:
+
+```ts
+export default {
+  fetch: async (address: string) => {
+    // Your fetch logic that handles both address types
+    return await fetchFromAPI(address);
+  },
+  // ... other functions
+  supportedAddressTypes: ["evm", "svm"],
+} as AdapterExport;
+```
+
+The adapter framework automatically detects the address type and validates it against your supported types.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing Your Adapter" icon="flask" href="/guides/testing-adapter">
+    Learn how to test your adapter locally
+  </Card>
+  <Card title="Custom Terminology" icon="tag" href="/guides/custom-terminology">
+    Use custom terms like Minerals or XP instead of Points
+  </Card>
+</CardGroup>

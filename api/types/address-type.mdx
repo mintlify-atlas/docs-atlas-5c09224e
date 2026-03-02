@@ -1,0 +1,149 @@
+---
+title: "AddressType"
+description: "Type definition for supported blockchain address formats"
+---
+
+## Type Definition
+
+```typescript
+type AddressType = "evm" | "svm";
+```
+
+Defined in `utils/address.ts:1`
+
+## Description
+
+The `AddressType` type represents the two blockchain address formats supported by the Points Adapters SDK:
+
+- `"evm"` - Ethereum Virtual Machine addresses (e.g., `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb`)
+- `"svm"` - Solana Virtual Machine addresses (base58 encoded, e.g., `7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU`)
+
+## Usage in Adapters
+
+Every adapter must declare which address types it supports via the `supportedAddressTypes` field:
+
+```typescript
+export default {
+  fetch: async (address: string) => {
+    // ...
+  },
+  data: (data) => {
+    // ...
+  },
+  total: (data) => {
+    // ...
+  },
+  supportedAddressTypes: ["evm"], // Only supports EVM addresses
+} as AdapterExport;
+```
+
+From `adapters/etherfi.ts:83`
+
+### Multi-chain Support
+
+Adapters can support both address types:
+
+```typescript
+export default {
+  // ...
+  supportedAddressTypes: ["evm", "svm"], // Supports both EVM and SVM
+} as AdapterExport;
+```
+
+## Address Validation
+
+The SDK provides utility functions to validate and detect address types:
+
+### `isEvmAddress(address: string): boolean`
+
+Validates if a string is a valid EVM address:
+
+```typescript
+import { isEvmAddress } from "./utils/address.ts";
+
+isEvmAddress("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"); // true
+isEvmAddress("invalid"); // false
+```
+
+Defined in `utils/address.ts:8-9`
+
+### `isSvmAddress(address: string): boolean`
+
+Validates if a string is a valid SVM (Solana) address:
+
+```typescript
+import { isSvmAddress } from "./utils/address.ts";
+
+isSvmAddress("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"); // true
+isSvmAddress("invalid"); // false
+```
+
+Defined in `utils/address.ts:11-14`
+
+### `detectAddressType(address: string): AddressType | null`
+
+Automatically detects the address type, returning `null` if unrecognized:
+
+```typescript
+import { detectAddressType } from "./utils/address.ts";
+
+detectAddressType("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"); // "evm"
+detectAddressType("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"); // "svm"
+detectAddressType("invalid"); // null
+```
+
+Defined in `utils/address.ts:16-20`
+
+### `requireAddressType(address: string): AddressType`
+
+Same as `detectAddressType` but throws an error if the address type cannot be determined:
+
+```typescript
+import { requireAddressType } from "./utils/address.ts";
+
+requireAddressType("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"); // "evm"
+requireAddressType("invalid"); // throws Error
+```
+
+Defined in `utils/address.ts:23-29`
+
+## Runtime Validation
+
+When an adapter is executed via `runAdapter()`, the SDK automatically validates that the provided address type is supported:
+
+```typescript
+const addressType = detectAddressType(address);
+if (!addressType) {
+  throw new Error(
+    `Invalid address "${address}". Only EVM (0x...) and SVM (base58) addresses are supported.`
+  );
+}
+
+if (!adapter.supportedAddressTypes.includes(addressType)) {
+  throw new Error(
+    `Adapter does not support "${addressType}" addresses. Supported types are: ${supported.join(", ")}.`
+  );
+}
+```
+
+From `utils/adapter.ts:33-47`
+
+## Validation Rules
+
+### EVM Addresses
+
+- Must start with `0x`
+- Followed by exactly 40 hexadecimal characters (0-9, a-f, A-F)
+- Regex: `/^0x[a-fA-F0-9]{40}$/`
+
+### SVM Addresses
+
+- Base58 encoded string
+- Length between 32 and 44 characters
+- Contains only valid base58 characters: `[1-9A-HJ-NP-Za-km-z]`
+- Regex: `/^[1-9A-HJ-NP-Za-km-z]+$/`
+
+## Related Types
+
+- [AdapterExport](/api/types/adapter-export) - Uses `supportedAddressTypes: AddressType[]`
+- [AdapterResult](/api/types/adapter-result) - Includes `supportedAddressTypes: AddressType[]`

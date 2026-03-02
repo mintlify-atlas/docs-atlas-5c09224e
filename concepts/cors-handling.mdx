@@ -1,0 +1,447 @@
+---
+title: 'CORS Handling'
+description: 'Learn how the Points Adapters SDK handles CORS for browser compatibility'
+---
+
+## Why CORS Matters
+
+Cross-Origin Resource Sharing (CORS) is a browser security mechanism that restricts web applications from making requests to different domains. When adapters run in a browser environment, they often need to fetch data from third-party APIs that may not have proper CORS headers configured.
+
+<Warning>
+  Without proper CORS handling, browser-based applications will fail with CORS errors when trying to fetch points data from external APIs.
+</Warning>
+
+**The problem:**
+- Adapters need to call various protocol APIs from the browser
+- Many protocol APIs don't set `Access-Control-Allow-Origin: *` headers
+- Browsers block these requests for security reasons
+- The adapter fails to retrieve points data
+
+**The solution:**
+- The SDK automatically detects browser environments
+- Routes requests through a CORS proxy when needed
+- Provides seamless fallback for APIs without CORS support
+
+## The maybeWrapCORSProxy Function
+
+The core CORS handling utility is defined in `utils/cors.ts:43-48`:
+
+```typescript
+const maybeWrapCORSProxy = async (url: string): Promise<string> => {
+  if (!IS_BROWSER) return url;
+  if (FAST_LOAD) return wrapCORSProxy(url);
+
+  return (await isGoodCORS(url)) ? url : wrapCORSProxy(url);
+};
+```
+
+### How It Works
+
+<Steps>
+  <Step title="Check Environment">
+    If not running in a browser (e.g., Deno runtime), return the URL unchanged.
+  </Step>
+  
+  <Step title="Fast Load Mode">
+    If `FAST_LOAD` is enabled, immediately wrap the URL without testing. Skips CORS check for faster startup.
+  </Step>
+  
+  <Step title="Test CORS Support">
+    Make a test request to check if the API has proper CORS headers.
+  </Step>
+  
+  <Step title="Conditional Wrapping">
+    Only wrap the URL in a CORS proxy if the API doesn't support CORS.
+  </Step>
+</Steps>
+
+## Environment Detection
+
+The SDK detects whether it's running in a browser (`utils/cors.ts:17-18`):
+
+```typescript
+// @ts-ignore `document` exist on the browser, but not in Deno runtime.
+const IS_BROWSER = typeof document !== "undefined";
+```
+
+**Behavior:**
+- Browser: CORS handling is active
+- Server/Deno: CORS handling is skipped (not needed)
+
+## CORS Testing
+
+The SDK tests whether an API supports CORS (`utils/cors.ts:23-39`):
+
+```typescript
+const isGoodCORS = async (url: string): Promise<boolean> => {
+  try {
+    const res = await fetch(url, { method: "GET" });
+    return (
+      res.headers.get("Access-Control-Allow-Origin") === "*" ||
+      res.headers.get("access-control-allow-origin") === "*"
+    );
+  } catch (e) {
+    if (e instanceof TypeError) {
+      // Ran in browser and CORS denied us..
+      return false;
+    } else {
+      throw e;
+    }
+  }
+};
+```
+
+**Testing logic:**
+1. Make a GET request to the URL
+2. Check if the response has `Access-Control-Allow-Origin: *` header
+3. If a TypeError occurs (CORS blocked the request), return `false`
+4. Any other error is re-thrown
+
+<Note>
+  The function checks both lowercase and standard case header names for maximum compatibility.
+</Note>
+
+## CORS Proxy Configuration
+
+The default CORS proxy URL is configurable via environment variables (`utils/cors.ts:11-14`):
+
+```typescript
+const CORS_PROXY_URL = maybeReadEnv(
+  "CORS_PROXY_URL",
+  "https://c-proxy.dorime.org/"
+);
+```
+
+**Configuration options:**
+- `CORS_PROXY_URL`: Custom proxy URL (default: `https://c-proxy.dorime.org/`)
+- `FAST_LOAD`: Skip CORS testing and always use proxy (default: `false`)
+
+**Environment variable priority:**
+1. Deno environment: `Deno.env.get(name)`
+2. Vite/Build tool: `import.meta.env.VITE_${name}`
+3. Node.js: `process.env[name]`
+4. Default fallback value
+
+### Setting Environment Variables
+
+```bash
+# For faster startup (skip CORS testing)
+export FAST_LOAD=true
+
+# Use a custom CORS proxy
+export CORS_PROXY_URL=https://my-proxy.example.com/
+```
+
+## URL Wrapping
+
+When CORS proxy is needed, the URL is wrapped (`utils/cors.ts:20`):
+
+```typescript
+const wrapCORSProxy = (url: string): string => CORS_PROXY_URL + url;
+```
+
+**Example transformation:**
+```typescript
+const original = "https://api.dolomite.io/airdrop/regular/0x123...";
+const wrapped = "https://c-proxy.dorime.org/https://api.dolomite.io/airdrop/regular/0x123...";
+```
+
+The CORS proxy server fetches the original URL and adds proper CORS headers to the response.
+
+## Using CORS Handling in Adapters
+
+### Basic Usage
+
+Every adapter should wrap API URLs with `maybeWrapCORSProxy`:
+
+```typescript
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+// Wrap the URL at module initialization
+const API_URL = await maybeWrapCORSProxy(
+  "https://api.example.com/points/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    // Use the wrapped URL
+    const response = await fetch(API_URL.replace("{address}", address));
+    return response.json();
+  },
+  // ... rest of adapter
+} as AdapterExport;
+```
+
+<Tip>
+  Always use `await` when calling `maybeWrapCORSProxy` since it performs async CORS testing.
+</Tip>
+
+### Real-World Examples
+
+#### Sonic Adapter
+
+From `adapters/sonic.ts:4-6`:
+
+```typescript
+const API_URL = await maybeWrapCORSProxy(
+  "https://www.data-openblocklabs.com/sonic/user-points-stats?wallet_address={address}"
+);
+```
+
+#### Ether.fi Adapter
+
+From `adapters/etherfi.ts:5-7`:
+
+```typescript
+const API_URL = await maybeWrapCORSProxy(
+  "https://www.ether.fi/api/dapp/portfolio/v3/{address}"
+);
+```
+
+#### Dolomite Adapter
+
+From `adapters/dolomite.ts:7-9`:
+
+```typescript
+const AIRDROP_URL = await maybeWrapCORSProxy(
+  "https://api.dolomite.io/airdrop/regular/{address}"
+);
+```
+
+### Multiple API URLs
+
+If your adapter uses multiple endpoints, wrap each one:
+
+```typescript
+const POINTS_API = await maybeWrapCORSProxy(
+  "https://api.example.com/points/{address}"
+);
+
+const RANK_API = await maybeWrapCORSProxy(
+  "https://api.example.com/leaderboard/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    const [points, rank] = await Promise.all([
+      fetch(POINTS_API.replace("{address}", address)).then(r => r.json()),
+      fetch(RANK_API.replace("{address}", address)).then(r => r.json()),
+    ]);
+    
+    return { points, rank };
+  },
+  // ... rest of adapter
+} as AdapterExport;
+```
+
+## When CORS Proxying Occurs
+
+<Accordion title="Browser Environment + API without CORS">
+  The URL is wrapped in the CORS proxy to enable browser compatibility.
+  
+  ```typescript
+  // Original
+  "https://api.protocol.com/points"
+  
+  // Wrapped
+  "https://c-proxy.dorime.org/https://api.protocol.com/points"
+  ```
+</Accordion>
+
+<Accordion title="Browser Environment + API with CORS">
+  The original URL is used directly since the API already supports CORS.
+  
+  ```typescript
+  // No wrapping needed
+  "https://api.protocol.com/points"
+  ```
+</Accordion>
+
+<Accordion title="Server/Deno Environment">
+  The original URL is always used since CORS restrictions don't apply outside browsers.
+  
+  ```typescript
+  // No wrapping needed
+  "https://api.protocol.com/points"
+  ```
+</Accordion>
+
+<Accordion title="Fast Load Mode Enabled">
+  The URL is always wrapped to skip CORS testing and reduce initialization time.
+  
+  ```typescript
+  // Always wrapped (no testing)
+  "https://c-proxy.dorime.org/https://api.protocol.com/points"
+  ```
+</Accordion>
+
+## Performance Considerations
+
+### CORS Testing Overhead
+
+By default, `maybeWrapCORSProxy` makes a test request to check CORS support:
+
+- **Pros**: Only uses proxy when necessary, faster requests for CORS-enabled APIs
+- **Cons**: Adds initialization delay for each adapter (one extra request per URL)
+
+### Fast Load Mode
+
+Enable `FAST_LOAD` to skip CORS testing:
+
+```bash
+export FAST_LOAD=true
+```
+
+- **Pros**: Faster adapter initialization, no test requests
+- **Cons**: Always uses proxy even for CORS-enabled APIs (slightly slower)
+
+**Recommendation**: Use `FAST_LOAD=true` in production for consistent performance.
+
+## Error Handling
+
+CORS-related errors typically manifest as TypeErrors in the browser:
+
+```typescript
+try {
+  const response = await fetch(url);
+} catch (error) {
+  if (error instanceof TypeError) {
+    // Likely a CORS error
+    console.error("CORS blocked the request");
+  }
+}
+```
+
+The SDK handles this automatically by:
+1. Detecting the TypeError during CORS testing
+2. Returning `false` from `isGoodCORS`
+3. Wrapping the URL in the CORS proxy
+
+## Exported Utilities
+
+From `utils/cors.ts:50`:
+
+```typescript
+export { CORS_PROXY_URL, isGoodCORS, maybeWrapCORSProxy, wrapCORSProxy };
+```
+
+**Available functions:**
+- `maybeWrapCORSProxy(url)`: Smart CORS handling (recommended)
+- `wrapCORSProxy(url)`: Always wrap URL in proxy
+- `isGoodCORS(url)`: Test if URL supports CORS
+- `CORS_PROXY_URL`: The configured proxy URL
+
+## Best Practices
+
+<Card title="Always Await maybeWrapCORSProxy" icon="clock">
+  The function is async due to CORS testing. Always use `await` when wrapping URLs.
+  
+  ```typescript
+  // ✅ Correct
+  const API_URL = await maybeWrapCORSProxy("https://...");
+  
+  // ❌ Wrong
+  const API_URL = maybeWrapCORSProxy("https://...");
+  ```
+</Card>
+
+<Card title="Wrap URLs at Module Level" icon="layer-group">
+  Wrap URLs during module initialization, not inside the fetch function.
+  
+  ```typescript
+  // ✅ Correct - wrap once at module level
+  const API_URL = await maybeWrapCORSProxy("https://...");
+  
+  export default {
+    fetch: async (address: string) => {
+      const response = await fetch(API_URL.replace("{address}", address));
+      return response.json();
+    },
+  };
+  
+  // ❌ Wrong - wrapping on every fetch call
+  export default {
+    fetch: async (address: string) => {
+      const url = await maybeWrapCORSProxy("https://...");
+      const response = await fetch(url.replace("{address}", address));
+      return response.json();
+    },
+  };
+  ```
+</Card>
+
+<Card title="Use Fast Load in Production" icon="gauge-high">
+  Enable `FAST_LOAD` to eliminate CORS testing delays in production environments.
+</Card>
+
+<Card title="Test Both Environments" icon="vials">
+  Test your adapter in both browser and server environments to ensure CORS handling works correctly.
+</Card>
+
+## Complete Example
+
+Here's a complete adapter with proper CORS handling:
+
+```typescript
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+import { checksumAddress } from "viem";
+
+// Wrap URLs at module initialization
+const POINTS_API = await maybeWrapCORSProxy(
+  "https://api.example.com/v1/points/{address}"
+);
+
+const LEADERBOARD_API = await maybeWrapCORSProxy(
+  "https://api.example.com/v1/leaderboard/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    // Normalize address
+    const normalized = checksumAddress(address as `0x${string}`);
+    
+    // Fetch from wrapped URLs
+    const pointsResponse = await fetch(
+      POINTS_API.replace("{address}", normalized),
+      {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      }
+    );
+    
+    const rankResponse = await fetch(
+      LEADERBOARD_API.replace("{address}", normalized)
+    );
+    
+    const points = await pointsResponse.json();
+    const rank = await rankResponse.json();
+    
+    return { ...points, rank: rank.position };
+  },
+  
+  data: (data) => ({
+    "Total Points": data.total_points,
+    "Claimable Points": data.claimable_points,
+    "Leaderboard Rank": data.rank,
+  }),
+  
+  total: (data) => data.total_points,
+  
+  rank: (data) => data.rank,
+  
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Adapters" icon="plug" href="/concepts/adapters">
+    Learn how to build complete adapters
+  </Card>
+  <Card title="Address Types" icon="address-card" href="/concepts/address-types">
+    Understand address validation and support
+  </Card>
+</CardGroup>

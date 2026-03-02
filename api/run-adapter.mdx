@@ -1,0 +1,336 @@
+---
+title: 'runAdapter'
+description: 'Execute a points adapter to fetch and process user data'
+---
+
+## Overview
+
+`runAdapter` is the core function that executes a points adapter. It validates the address, fetches data from the provider's API, processes the response, and returns a standardized result.
+
+## Function Signature
+
+```typescript
+const runAdapter = async (
+  adapter: AdapterExport,
+  address: string
+) => Promise<AdapterResult>
+```
+
+## Parameters
+
+<ParamField path="adapter" type="AdapterExport" required>
+  The adapter export object containing the fetch, data, total functions, and configuration.
+  
+  Must include:
+  - `fetch`: Function to retrieve raw data
+  - `data`: Function to format data for display
+  - `total`: Function to calculate total points
+  - `supportedAddressTypes`: Array of supported address types
+  
+  **Example:**
+  ```typescript
+  import sonicAdapter from "./adapters/sonic.ts";
+  
+  await runAdapter(sonicAdapter, "0x...");
+  ```
+</ParamField>
+
+<ParamField path="address" type="string" required>
+  The wallet address to query. Must be a valid EVM (0x...) or SVM (base58) address.
+  
+  **Valid formats:**
+  - EVM: `0x` followed by 40 hexadecimal characters
+  - SVM: Base58 string between 32-44 characters
+  
+  **Examples:**
+  ```typescript
+  // EVM address
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+  
+  // SVM address
+  "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV"
+  ```
+</ParamField>
+
+## Return Value
+
+<ResponseField name="AdapterResult" type="Promise<AdapterResult>">
+  Returns a promise that resolves to an `AdapterResult` object containing:
+  
+  - `__data`: Raw API response data
+  - `data`: Formatted, human-readable data
+  - `total`: Total points (number or labelled object)
+  - `claimable`: Whether points are claimable (boolean)
+  - `rank`: User's rank position (number)
+  - `deprecated`: Deprecation timestamps (object)
+  - `supportedAddressTypes`: Supported address types (array)
+  
+  See [AdapterResult](/api/adapter-result) for complete documentation.
+</ResponseField>
+
+## Address Validation
+
+The function performs two levels of address validation:
+
+### 1. Format Validation
+
+Validates that the address matches either EVM or SVM format:
+
+```typescript
+const addressType = detectAddressType(address);
+if (!addressType) {
+  throw new Error(
+    `Invalid address "${address}".` +
+      "Only EVM (0x...) and SVM (base58) addresses are supported."
+  );
+}
+```
+
+**Error example:**
+```typescript
+await runAdapter(sonicAdapter, "invalid-address");
+// Error: Invalid address "invalid-address".Only EVM (0x...) and SVM (base58) addresses are supported.
+```
+
+### 2. Adapter Compatibility
+
+Checks if the adapter supports the detected address type:
+
+```typescript
+const supported = adapter.supportedAddressTypes;
+if (!supported.includes(addressType)) {
+  throw new Error(
+    `Adapter does not support "${addressType}" addresses.` +
+      `Supported types are: ${supported.join(", ")}.`
+  );
+}
+```
+
+**Error example:**
+```typescript
+// Sonic adapter only supports EVM
+await runAdapter(sonicAdapter, "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+// Error: Adapter does not support "svm" addresses.Supported types are: evm.
+```
+
+## Data Processing Pipeline
+
+The function processes data through the following steps:
+
+### 1. Fetch Raw Data
+
+```typescript
+const data = await adapter.fetch(address);
+```
+
+### 2. Build Base Result
+
+```typescript
+const ret: AdapterResult = {
+  __data: data,
+  data: adapter.data(data),
+  total: adapter.total(data),
+  supportedAddressTypes: adapter.supportedAddressTypes,
+};
+```
+
+### 3. Add Optional Fields
+
+```typescript
+if (adapter.claimable) ret.claimable = adapter.claimable(data);
+if (adapter.rank) ret.rank = adapter.rank(data);
+if (adapter.deprecated) ret.deprecated = adapter.deprecated(data);
+```
+
+### 4. Normalize Values
+
+```typescript
+// Normalize data for display
+ret.data = convertValuesToNormal(ret.data);
+
+// Parse total as float or convert object values to integers
+ret.total =
+  typeof ret.total !== "object" || !ret.total
+    ? parseFloat(String(ret.total)) || 0
+    : convertValuesToInt(ret.total);
+
+// Ensure claimable is boolean
+ret.claimable = Boolean(ret.claimable);
+
+// Ensure rank is number
+ret.rank = Number(ret.rank) || 0;
+
+// Convert deprecated timestamps to integers
+ret.deprecated = ret.deprecated ? convertValuesToInt(ret.deprecated) : {};
+```
+
+## Usage Examples
+
+### Basic Usage
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import sonicAdapter from "./adapters/sonic.ts";
+
+const result = await runAdapter(
+  sonicAdapter,
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+);
+
+console.log(result.total);      // 1250.5
+console.log(result.rank);       // 1523
+console.log(result.claimable);  // false
+```
+
+### With Error Handling
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import etherfiAdapter from "./adapters/etherfi.ts";
+
+try {
+  const result = await runAdapter(
+    etherfiAdapter,
+    "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+  );
+  
+  console.log("Total Points:", result.total);
+  console.log("Detailed Data:", result.data);
+} catch (error) {
+  if (error.message.includes("Invalid address")) {
+    console.error("Please provide a valid wallet address");
+  } else if (error.message.includes("does not support")) {
+    console.error("This adapter doesn't support your address type");
+  } else {
+    console.error("Failed to fetch points:", error.message);
+  }
+}
+```
+
+### Multi-Chain Adapter
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import debridgeAdapter from "./adapters/debridge.ts";
+
+// Works with both EVM and SVM addresses
+const evmResult = await runAdapter(
+  debridgeAdapter,
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+);
+
+const svmResult = await runAdapter(
+  debridgeAdapter,
+  "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV"
+);
+
+console.log("EVM Total:", evmResult.total);
+console.log("SVM Total:", svmResult.total);
+```
+
+### Accessing Raw Data
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import karakAdapter from "./adapters/karak.ts";
+
+const result = await runAdapter(
+  karakAdapter,
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+);
+
+// Access formatted data
+console.log(result.data);
+// { XP: { Phase1: "0", Phase2: "766112.27", Phase3: "0" } }
+
+// Access raw API response
+console.log(result.__data);
+// { xp: 766112.2666695756, xpByPhase: {...}, usersReferred: 0, ... }
+```
+
+### Checking Deprecation Status
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import debridgeAdapter from "./adapters/debridge.ts";
+
+const result = await runAdapter(
+  debridgeAdapter,
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+);
+
+if (Object.keys(result.deprecated).length > 0) {
+  console.log("⚠️ Some point categories are deprecated:");
+  
+  for (const [category, timestamp] of Object.entries(result.deprecated)) {
+    const date = new Date(timestamp * 1000);
+    console.log(`  ${category}: ended on ${date.toLocaleDateString()}`);
+  }
+}
+// Output:
+// ⚠️ Some point categories are deprecated:
+//   Season 1: ended on 10/17/2024
+//   Season 2: ended on 11/19/2025
+```
+
+## Error Cases
+
+### Invalid Address Format
+
+```typescript
+await runAdapter(adapter, "not-an-address");
+// Error: Invalid address "not-an-address".Only EVM (0x...) and SVM (base58) addresses are supported.
+```
+
+### Unsupported Address Type
+
+```typescript
+await runAdapter(evmOnlyAdapter, "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV");
+// Error: Adapter does not support "svm" addresses.Supported types are: evm.
+```
+
+### Network/API Errors
+
+Network errors from the adapter's `fetch` function are not caught by `runAdapter` and will propagate to the caller:
+
+```typescript
+try {
+  await runAdapter(adapter, "0x...");
+} catch (error) {
+  // Could be validation error or network error
+  console.error(error.message);
+}
+```
+
+## Performance Considerations
+
+- The function is async and waits for the adapter's `fetch` call to complete
+- Network latency depends on the third-party API being queried
+- Data processing (normalization, conversion) is synchronous and fast
+- No caching is implemented at the `runAdapter` level
+
+## Type Safety
+
+```typescript
+import type { AdapterExport, AdapterResult } from "./utils/adapter.ts";
+import sonicAdapter from "./adapters/sonic.ts";
+
+// Type-safe adapter
+const adapter: AdapterExport = sonicAdapter;
+
+// Type-safe result
+const result: AdapterResult = await runAdapter(
+  adapter,
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+);
+
+// TypeScript knows all available fields
+const points: number = result.total as number;
+const rank: number = result.rank!;
+```
+
+## See Also
+
+- [AdapterExport](/api/adapter-export) - Type definition for adapters
+- [AdapterResult](/api/adapter-result) - Type definition for results
+- [Address Detection](/utils/address-detection) - Address type validation utilities

@@ -1,0 +1,299 @@
+---
+title: "Address Detection Utilities"
+description: "Utilities for detecting and validating blockchain address types (EVM and SVM)"
+---
+
+## Overview
+
+The address detection utilities help identify whether a wallet address belongs to an EVM-compatible chain (Ethereum, Polygon, etc.) or a Solana Virtual Machine (SVM) chain. These functions are essential for building adapters that support multiple blockchain ecosystems.
+
+All functions are exported from `utils/address.ts`.
+
+## Functions
+
+### detectAddressType
+
+Detects the type of blockchain address and returns the address type or null if invalid.
+
+```typescript
+function detectAddressType(address: string): AddressType | null
+```
+
+**Parameters:**
+- `address` (string): The wallet address to check
+
+**Returns:**
+- `"evm"` - If the address is a valid EVM address
+- `"svm"` - If the address is a valid Solana address  
+- `null` - If the address format is not recognized
+
+**Example:**
+
+```typescript
+import { detectAddressType } from "./utils/address.ts";
+
+const evmAddress = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
+const svmAddress = "DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK";
+const invalidAddress = "not-an-address";
+
+console.log(detectAddressType(evmAddress));    // "evm"
+console.log(detectAddressType(svmAddress));    // "svm"
+console.log(detectAddressType(invalidAddress)); // null
+```
+
+**Usage in runAdapter:**
+
+The `runAdapter` function (utils/adapter.ts:33) uses `detectAddressType` to validate addresses before running adapters:
+
+```typescript
+const runAdapter = async (adapter: AdapterExport, address: string) => {
+  const addressType = detectAddressType(address);
+  if (!addressType) {
+    throw new Error(
+      `Invalid address "${address}".` +
+        "Only EVM (0x...) and SVM (base58) addresses are supported."
+    );
+  }
+
+  const supported = adapter.supportedAddressTypes;
+  if (!supported.includes(addressType)) {
+    throw new Error(
+      `Adapter does not support "${addressType}" addresses.` +
+        `Supported types are: ${supported.join(", ")}.`
+    );
+  }
+  // ...
+};
+```
+
+---
+
+### requireAddressType
+
+Same as `detectAddressType` but throws an error instead of returning null for invalid addresses.
+
+```typescript
+function requireAddressType(address: string): AddressType
+```
+
+**Parameters:**
+- `address` (string): The wallet address to check
+
+**Returns:**
+- `"evm"` - If the address is a valid EVM address
+- `"svm"` - If the address is a valid Solana address
+
+**Throws:**
+- `Error` - If the address format is not recognized with message: `"Invalid address type, expected one of: ['evm', 'svm']"`
+
+**Example:**
+
+```typescript
+import { requireAddressType } from "./utils/address.ts";
+
+const evmAddress = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
+console.log(requireAddressType(evmAddress)); // "evm"
+
+const invalidAddress = "not-an-address";
+try {
+  requireAddressType(invalidAddress);
+} catch (error) {
+  console.error(error.message); // "Invalid address type, expected one of: ['evm', 'svm']"
+}
+```
+
+**Usage in adapters:**
+
+The Nansen adapter (adapters/nansen.ts:18) uses `requireAddressType` to handle multi-chain support:
+
+```typescript
+export default {
+  fetch: async (address: string) => {
+    const res = await fetch(API_URL);
+    const data = await res.json();
+
+    const addressType = requireAddressType(address);
+    const target = addressType === "evm" ? address.toLowerCase() : address;
+
+    return data.find((obj: { evm_address?: string; solana_address?: string }) =>
+      addressType === "svm"
+        ? obj?.solana_address === target
+        : obj?.evm_address?.toLowerCase() === target
+    ) ?? null;
+  },
+  supportedAddressTypes: ["evm", "svm"],
+};
+```
+
+---
+
+### isEvmAddress
+
+Checks if an address is a valid EVM (Ethereum Virtual Machine) address.
+
+```typescript
+function isEvmAddress(address: string): boolean
+```
+
+**Parameters:**
+- `address` (string): The wallet address to check
+
+**Returns:**
+- `true` - If the address matches EVM format
+- `false` - Otherwise
+
+**Validation Logic:**
+
+EVM addresses must match the pattern:
+- Start with `0x` prefix
+- Followed by exactly 40 hexadecimal characters (0-9, a-f, A-F)
+- Total length: 42 characters
+
+**Example:**
+
+```typescript
+import { isEvmAddress } from "./utils/address.ts";
+
+// Valid EVM addresses
+console.log(isEvmAddress("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb")); // true
+console.log(isEvmAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")); // true
+
+// Invalid EVM addresses
+console.log(isEvmAddress("742d35Cc6634C0532925a3b844Bc9e7595f0bEb"));   // false (missing 0x)
+console.log(isEvmAddress("0x742d35Cc"));                               // false (too short)
+console.log(isEvmAddress("0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")); // false (invalid chars)
+```
+
+---
+
+### isSvmAddress
+
+Checks if an address is a valid SVM (Solana Virtual Machine) address.
+
+```typescript
+function isSvmAddress(address: string): boolean
+```
+
+**Parameters:**
+- `address` (string): The wallet address to check
+
+**Returns:**
+- `true` - If the address matches SVM format
+- `false` - Otherwise
+
+**Validation Logic:**
+
+SVM addresses must meet all criteria:
+- Length between 32-44 characters (inclusive)
+- Base58 encoded (valid characters: `1-9`, `A-H`, `J-N`, `P-Z`, `a-k`, `m-z`)
+- Excludes confusing characters: `0`, `O`, `I`, `l`
+
+**Example:**
+
+```typescript
+import { isSvmAddress } from "./utils/address.ts";
+
+// Valid SVM addresses
+console.log(isSvmAddress("DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK")); // true
+console.log(isSvmAddress("So11111111111111111111111111111111111111112"));  // true
+
+// Invalid SVM addresses
+console.log(isSvmAddress("short"));                    // false (too short)
+console.log(isSvmAddress("0xdAC17F958D2ee523a221")); // false (contains invalid chars)
+console.log(isSvmAddress("this-is-way-too-long-to-be-a-valid-solana-address")); // false (too long)
+```
+
+## Type Definition
+
+```typescript
+type AddressType = "evm" | "svm";
+```
+
+This type represents the two supported blockchain address formats:
+- `"evm"` - Ethereum Virtual Machine compatible chains (Ethereum, Polygon, BSC, Arbitrum, etc.)
+- `"svm"` - Solana Virtual Machine (Solana)
+
+## Implementation Details
+
+The validation is performed using regular expressions and length checks:
+
+```typescript
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const SVM_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const SVM_MIN_LENGTH = 32;
+const SVM_MAX_LENGTH = 44;
+```
+
+## Error Handling
+
+### Using detectAddressType (null return)
+
+```typescript
+const addressType = detectAddressType(userInput);
+if (!addressType) {
+  console.error("Invalid address format");
+  return;
+}
+// Safe to use addressType
+```
+
+### Using requireAddressType (throws error)
+
+```typescript
+try {
+  const addressType = requireAddressType(userInput);
+  // Safe to use addressType
+} catch (error) {
+  console.error("Invalid address:", error.message);
+}
+```
+
+## Common Patterns
+
+### Multi-chain adapter support
+
+```typescript
+import { requireAddressType } from "../utils/address.ts";
+
+export default {
+  fetch: async (address: string) => {
+    const addressType = requireAddressType(address);
+    
+    // Normalize address based on type
+    const normalizedAddress = addressType === "evm" 
+      ? address.toLowerCase()
+      : address;
+    
+    // Use appropriate API endpoint
+    const endpoint = addressType === "evm"
+      ? `/evm/${normalizedAddress}`
+      : `/solana/${normalizedAddress}`;
+      
+    return await fetch(API_URL + endpoint).then(r => r.json());
+  },
+  supportedAddressTypes: ["evm", "svm"],
+};
+```
+
+### Validating before expensive operations
+
+```typescript
+import { detectAddressType } from "./utils/address.ts";
+
+function processAddress(address: string) {
+  // Quick validation before expensive operations
+  const addressType = detectAddressType(address);
+  if (!addressType) {
+    return { error: "Invalid address format" };
+  }
+  
+  // Proceed with expensive operations
+  return performExpensiveOperation(address, addressType);
+}
+```
+
+## See Also
+
+- [Creating an Adapter](/guides/create-adapter) - Learn how to build adapters with address validation
+- [AdapterExport Type](/api/types/adapter-export) - The adapter interface that includes `supportedAddressTypes`
+- [runAdapter Function](/api/utils/run-adapter) - Automatically validates addresses using these utilities

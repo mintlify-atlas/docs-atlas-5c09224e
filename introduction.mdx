@@ -1,0 +1,138 @@
+---
+title: Introduction
+description: A TypeScript library providing unified adapters to fetch and normalize points data from 56+ DeFi protocols
+---
+
+## What is Points Adapters?
+
+Points Adapters is a TypeScript library that provides a unified interface to fetch and normalize points data from over 56 DeFi protocols. It simplifies the process of integrating multiple protocol point systems into your application by providing standardized adapters that handle the complexity of different API formats, authentication methods, and data structures.
+
+Each adapter takes a wallet address and returns normalized points data, making it easy to aggregate and display points across multiple protocols.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with Points Adapters in minutes
+  </Card>
+  <Card title="Creating Adapters" icon="code" href="/guides/creating-adapter">
+    Learn how to build your own protocol adapters
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/adapter-export">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Available Adapters" icon="flask" href="/adapters/list">
+    Browse all 56+ protocol adapters
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### 56+ Protocol Adapters
+
+Pre-built adapters for major DeFi protocols including:
+- **Liquid Staking**: ether.fi, Bedrock, Kelp DAO
+- **DEXs**: Sonic, Jumper Exchange, Swaps.io
+- **Restaking**: Symbiotic, Karak, Mellow
+- **DeFi Platforms**: Ethena, Dolomite, Pendle
+- **And many more...**
+
+### Multi-Chain Support
+
+Supports both EVM and Solana address types:
+- **EVM**: Ethereum-style addresses (`0x...`)
+- **SVM**: Solana base58 addresses
+
+Every adapter declares which address types it supports, ensuring compatibility across chains.
+
+### Automatic CORS Handling
+
+Built-in CORS proxy support for browser environments:
+- Automatically detects browser vs. server runtime
+- Tests API endpoints for CORS compatibility
+- Wraps non-CORS URLs with proxy when needed
+- Configurable proxy endpoint via environment variables
+
+### Normalized Data Structure
+
+All adapters return consistent data formats:
+```typescript
+{
+  data: { /* Detailed breakdown of points */ },
+  total: number | { [label: string]: number },
+  rank?: number,
+  claimable?: boolean,
+  deprecated?: { [label: string]: number }
+}
+```
+
+### Browser-First Design
+
+Adapters are designed to run in both browser and server environments:
+- Uses standard Web APIs (`fetch`, etc.)
+- No Node.js-specific dependencies
+- Runs natively in Deno runtime
+- Compatible with modern bundlers
+
+## Use Cases
+
+### Portfolio Trackers
+
+Build comprehensive DeFi portfolio applications that aggregate points across multiple protocols. Users can see their total points, rankings, and claimable rewards all in one place.
+
+### Protocol Dashboards
+
+Create protocol-specific dashboards that display detailed points breakdowns, historical data, and leaderboard rankings for your users.
+
+### Reward Aggregators
+
+Develop applications that help users discover and claim rewards across the DeFi ecosystem by checking multiple protocols simultaneously.
+
+### Analytics Platforms
+
+Build analytics tools that track points accumulation trends, compare protocols, and provide insights into DeFi reward programs.
+
+### Integration Services
+
+Integrate multiple protocol points systems into existing applications without building custom integrations for each protocol.
+
+## How It Works
+
+Each adapter follows a simple pattern:
+
+1. **Fetch**: Takes a wallet address and fetches raw data from the protocol's API
+2. **Normalize**: Transforms the raw data into a standardized format
+3. **Return**: Provides structured points data with consistent fields
+
+```typescript
+import type { AdapterExport } from "./utils/adapter.ts";
+import { maybeWrapCORSProxy } from "./utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://api.protocol.com/points/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    return await (await fetch(API_URL.replace("{address}", address))).json();
+  },
+  data: (data: Record<string, number>) => ({
+    "Total Points": data.points,
+    "Multiplier": data.multiplier,
+    "Rank": data.rank,
+  }),
+  total: (data: Record<string, number>) => data.points,
+  rank: (data: { rank: number }) => data.rank,
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## Community
+
+Join our Discord community to get help, share adapters, and collaborate with other developers:
+
+[![Discord Banner](https://discordapp.com/api/guilds/1335654843968262196/widget.png?style=banner2)](https://discord.gg/3z9EUxNSaj)
+
+## Open Source
+
+Points Adapters is open source and welcomes contributions. Whether you're adding a new protocol adapter, improving existing ones, or enhancing the core library, your contributions are appreciated.
+
+Visit the [GitHub repository](https://github.com/0xPortalLabs/points-adapters) to contribute or report issues.

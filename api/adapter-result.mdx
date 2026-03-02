@@ -1,0 +1,293 @@
+---
+title: 'AdapterResult'
+description: 'Type definition for adapter execution results'
+---
+
+## Overview
+
+`AdapterResult<T>` represents the structured output returned by the `runAdapter` function after successfully executing an adapter. It includes both the raw API data and all processed fields.
+
+## Type Definition
+
+```typescript
+type AdapterResult<T = object> = {
+  __data: T;
+  data: DetailedData | LabelledDetailedData;
+  total: number | LabelledPoints;
+  claimable?: boolean;
+  rank?: number;
+  deprecated?: DeprecatedLabels;
+  supportedAddressTypes: AddressType[];
+};
+```
+
+## Type Parameters
+
+<ParamField path="T" type="object" default="object">
+  The type of raw data returned by the adapter's `fetch` function. This matches the generic type parameter of the corresponding `AdapterExport<T>`.
+</ParamField>
+
+## Properties
+
+<ResponseField name="__data" type="T" required>
+  The raw, unprocessed data returned from the adapter's `fetch` function. Useful for debugging or accessing fields not included in the processed `data` object.
+  
+  **Example:**
+  ```typescript
+  {
+    user_activity_last_detected: "2025-01-28T21:19:14.817735+00:00",
+    wallet_address: "0xa571af45783cf0461aef7329ec7df3eea8c48a1e",
+    sonic_points: 1250.5,
+    loyalty_multiplier: 1.5,
+    ecosystem_points: 800.0,
+    passive_liquidity_points: 450.5,
+    activity_points: 200,
+    rank: 1523
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="data" type="DetailedData | LabelledDetailedData" required>
+  Human-readable, formatted data processed by the adapter's `data` function. All numeric values are normalized for display.
+  
+  **Type definitions:**
+  - `DetailedData`: `{ [key: string]: string | number }`
+  - `LabelledDetailedData`: `{ [label: string]: DetailedData }`
+  
+  **Example (simple format):**
+  ```typescript
+  {
+    "Sonic Points": "1250.5",
+    "Loyalty Multiplier": "1.5",
+    "Ecosystem Points": "800",
+    "Passive Liquidity Points": "450.5",
+    "Activity Points": "200",
+    "Rank": "1523"
+  }
+  ```
+  
+  **Example (labelled format):**
+  ```typescript
+  {
+    "Season 1": {
+      "Rank": "3321",
+      "Total Points": "42142.91",
+      "Active Multiplier": "1.5"
+    },
+    "Season 2": {
+      "Rank": "2100",
+      "Total Points": "58000.00",
+      "Active Multiplier": "2.0"
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="total" type="number | LabelledPoints" required>
+  The total points value(s) processed by the adapter's `total` function. Numeric values are parsed and converted, objects have integer values.
+  
+  **Type definition:**
+  - `LabelledPoints`: `{ [label: string]: number }`
+  
+  **Example (single value):**
+  ```typescript
+  1250.5
+  ```
+  
+  **Example (labelled points):**
+  ```typescript
+  {
+    "XP": 766112,
+    "Bonus Points": 5000
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="claimable" type="boolean">
+  Indicates whether the points are currently claimable. This field is always present in the result, defaulting to `false` if the adapter doesn't define a `claimable` function.
+  
+  **Example:**
+  ```typescript
+  true
+  ```
+</ResponseField>
+
+<ResponseField name="rank" type="number">
+  The user's rank position. Defaults to `0` if the adapter doesn't define a `rank` function or if the user is unranked.
+  
+  **Example:**
+  ```typescript
+  1523
+  ```
+</ResponseField>
+
+<ResponseField name="deprecated" type="DeprecatedLabels">
+  Unix timestamps indicating when different point categories were deprecated. Returns an empty object `{}` if the adapter doesn't define deprecation.
+  
+  **Type definition:**
+  - `DeprecatedLabels`: `{ [label: string]: number }`
+  
+  **Example:**
+  ```typescript
+  {
+    "Season 1": 1729113600,
+    "Season 2": 1763554128
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="supportedAddressTypes" type="AddressType[]" required>
+  Array of blockchain address types supported by this adapter.
+  
+  **Possible values:**
+  - `"evm"`: Ethereum Virtual Machine addresses
+  - `"svm"`: Solana Virtual Machine addresses
+  
+  **Example:**
+  ```typescript
+  ["evm"]
+  ```
+  
+  **Example (multi-chain):**
+  ```typescript
+  ["evm", "svm"]
+  ```
+</ResponseField>
+
+## Complete Example
+
+Result from running the Sonic adapter:
+
+```typescript
+{
+  __data: {
+    user_activity_last_detected: "2025-01-28T21:19:14.817735+00:00",
+    wallet_address: "0xa571af45783cf0461aef7329ec7df3eea8c48a1e",
+    sonic_points: 1250.5,
+    loyalty_multiplier: 1.5,
+    ecosystem_points: 800.0,
+    passive_liquidity_points: 450.5,
+    activity_points: 200,
+    rank: 1523
+  },
+  data: {
+    "User Activity Last Detected": "Wed Jan 28 2025 21:19:14 GMT+0000",
+    "Sonic Points": "1250.5",
+    "Loyalty Multiplier": "1.5",
+    "Ecosystem Points": "800",
+    "Passive Liquidity Points": "450.5",
+    "Activity Points": "200",
+    "Rank": "1523"
+  },
+  total: 1250.5,
+  claimable: false,
+  rank: 1523,
+  deprecated: {},
+  supportedAddressTypes: ["evm"]
+}
+```
+
+## Example with All Optional Fields
+
+Result from running the DeBridge adapter:
+
+```typescript
+{
+  __data: {
+    s1: {
+      userRank: 3321,
+      totalPoints: 42142.9131768591251027500,
+      activeMultiplier: 1.5,
+      finalMultiplier: 1.5,
+      nft: null,
+      originMultiplier: null,
+      season: 1
+    },
+    s2: {
+      userRank: 2100,
+      totalPoints: 58000.00,
+      activeMultiplier: 2.0,
+      finalMultiplier: 2.0,
+      nft: null,
+      originMultiplier: null,
+      season: 2
+    },
+    s3: {
+      userRank: 1850,
+      totalPoints: 75000.00,
+      activeMultiplier: 2.5,
+      finalMultiplier: 2.5,
+      nft: null,
+      originMultiplier: null,
+      season: 3
+    }
+  },
+  data: {
+    "Season 1": {
+      "Rank": "3321",
+      "Total Points": "42142.91",
+      "Active Multiplier": "1.5",
+      "Final Multiplier": "1.5",
+      "NFT": "null",
+      "Origin Multiplier": "null"
+    },
+    "Season 2": {
+      "Rank": "2100",
+      "Total Points": "58000",
+      "Active Multiplier": "2",
+      "Final Multiplier": "2",
+      "NFT": "null",
+      "Origin Multiplier": "null"
+    },
+    "Season 3": {
+      "Rank": "1850",
+      "Total Points": "75000",
+      "Active Multiplier": "2.5",
+      "Final Multiplier": "2.5",
+      "NFT": "null",
+      "Origin Multiplier": "null"
+    }
+  },
+  total: 75000,
+  claimable: true,
+  rank: 1850,
+  deprecated: {
+    "Season 1": 1729113600,
+    "Season 2": 1763554128
+  },
+  supportedAddressTypes: ["evm", "svm"]
+}
+```
+
+## Data Processing
+
+The `runAdapter` function applies the following transformations to create the result:
+
+1. **Data normalization**: Converts values using `convertValuesToNormal()` for display
+2. **Total conversion**: 
+   - Numbers: Parsed as float with fallback to 0
+   - Objects: Converted to integers using `convertValuesToInt()`
+3. **Claimable**: Always converted to boolean (defaults to `false`)
+4. **Rank**: Converted to number (defaults to `0`)
+5. **Deprecated**: Converted to integer timestamps or empty object `{}`
+
+## Usage
+
+```typescript
+import { runAdapter } from "./utils/adapter.ts";
+import sonicAdapter from "./adapters/sonic.ts";
+
+const result: AdapterResult = await runAdapter(
+  sonicAdapter,
+  "0xa571af45783cf0461aef7329ec7df3eea8c48a1e"
+);
+
+console.log(result.total); // 1250.5
+console.log(result.rank);  // 1523
+console.log(result.data);  // Formatted data object
+```
+
+## See Also
+
+- [AdapterExport](/api/adapter-export) - The adapter definition structure
+- [runAdapter](/api/run-adapter) - Function that produces this result type

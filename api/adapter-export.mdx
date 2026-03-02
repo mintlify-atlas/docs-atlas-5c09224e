@@ -1,0 +1,250 @@
+---
+title: 'AdapterExport'
+description: 'Type definition for adapter export structure'
+---
+
+## Overview
+
+`AdapterExport<T>` is the primary interface for creating a points adapter. It defines the structure that each adapter must export to integrate with the SDK.
+
+## Type Definition
+
+```typescript
+type AdapterExport<T = object> = {
+  fetch: (address: string) => Promise<T>;
+  data: (data: T) => DetailedData | LabelledDetailedData;
+  total: (data: T) => number | LabelledPoints;
+  claimable?: (data: T) => boolean;
+  rank?: (data: T) => number;
+  deprecated?: (data: T) => DeprecatedLabels;
+  supportedAddressTypes: AddressType[];
+};
+```
+
+## Type Parameters
+
+<ParamField path="T" type="object" default="object">
+  The type of data returned by the `fetch` function. This represents the raw API response from the points provider.
+</ParamField>
+
+## Properties
+
+<ParamField path="fetch" type="(address: string) => Promise<T>" required>
+  Fetches raw data from the points provider's API for a given address.
+  
+  **Parameters:**
+  - `address` (string): User's wallet address (EVM or SVM format)
+  
+  **Returns:** Promise resolving to the raw API response data of type `T`
+  
+  **Example:**
+  ```typescript
+  fetch: async (address: string) => {
+    return await (
+      await fetch(API_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+  }
+  ```
+</ParamField>
+
+<ParamField path="data" type="(data: T) => DetailedData | LabelledDetailedData" required>
+  Transforms raw API data into a human-readable format for display.
+  
+  **Parameters:**
+  - `data` (T): Raw data returned from the `fetch` function
+  
+  **Returns:**
+  - `DetailedData`: Object with string/number values (`{ [key: string]: string | number }`)
+  - `LabelledDetailedData`: Nested object for categorized data (`{ [label: string]: DetailedData }`)
+  
+  **Example:**
+  ```typescript
+  data: (data: Record<string, number>) => ({
+    "Sonic Points": data.sonic_points,
+    "Loyalty Multiplier": data.loyalty_multiplier,
+    "Ecosystem Points": data.ecosystem_points,
+    "Passive Liquidity Points": data.passive_liquidity_points,
+    "Activity Points": data.activity_points,
+    Rank: data.rank,
+  })
+  ```
+</ParamField>
+
+<ParamField path="total" type="(data: T) => number | LabelledPoints" required>
+  Calculates the total points for the address.
+  
+  **Parameters:**
+  - `data` (T): Raw data returned from the `fetch` function
+  
+  **Returns:**
+  - `number`: Single total points value
+  - `LabelledPoints`: Object with multiple point categories (`{ [label: string]: number }`)
+  
+  **Example (single value):**
+  ```typescript
+  total: (data: Record<string, number>) => data.sonic_points
+  ```
+  
+  **Example (labelled points):**
+  ```typescript
+  total: (data: { xp: number }) => ({ XP: data?.xp })
+  ```
+</ParamField>
+
+<ParamField path="claimable" type="(data: T) => boolean">
+  Determines if points are currently claimable as rewards.
+  
+  **Parameters:**
+  - `data` (T): Raw data returned from the `fetch` function
+  
+  **Returns:** Boolean indicating if points can be claimed
+  
+  **Example:**
+  ```typescript
+  claimable: (data: API_RESPONSE) => Number(data.earnings.total) > 0
+  ```
+</ParamField>
+
+<ParamField path="rank" type="(data: T) => number">
+  Extracts the user's rank from the data.
+  
+  **Parameters:**
+  - `data` (T): Raw data returned from the `fetch` function
+  
+  **Returns:** Numeric rank position (0 if unranked)
+  
+  **Example:**
+  ```typescript
+  rank: (data: { rank: number }) => data.rank
+  ```
+</ParamField>
+
+<ParamField path="deprecated" type="(data: T) => DeprecatedLabels">
+  Specifies deprecation timestamps for different point categories. Used to indicate when a points program has ended.
+  
+  **Parameters:**
+  - `data` (T): Raw data returned from the `fetch` function
+  
+  **Returns:** Object mapping point labels to Unix timestamps (`{ [label: string]: number }`)
+  
+  **Example:**
+  ```typescript
+  deprecated: () => ({
+    "Season 1": 1729113600, // Thursday 17th October 2024 08:00 UTC
+    "Season 2": 1763554128, // Wednesday 19th November 2025 12:08 UTC
+  })
+  ```
+</ParamField>
+
+<ParamField path="supportedAddressTypes" type="AddressType[]" required>
+  Array of supported blockchain address types.
+  
+  **Possible values:**
+  - `"evm"`: Ethereum Virtual Machine addresses (0x...)
+  - `"svm"`: Solana Virtual Machine addresses (base58)
+  
+  **Example:**
+  ```typescript
+  supportedAddressTypes: ["evm"]
+  ```
+  
+  **Example (multi-chain):**
+  ```typescript
+  supportedAddressTypes: ["evm", "svm"]
+  ```
+</ParamField>
+
+## Complete Example
+
+Here's a complete adapter implementation from `sonic.ts`:
+
+```typescript
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://www.data-openblocklabs.com/sonic/user-points-stats?wallet_address={address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    return await (
+      await fetch(API_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+  },
+  data: (data: Record<string, number>) => ({
+    "User Activity Last Detected": new Date(
+      data.user_activity_last_detected
+    ).toString(),
+    "Sonic Points": data.sonic_points,
+    "Loyalty Multiplier": data.loyalty_multiplier,
+    "Ecosystem Points": data.ecosystem_points,
+    "Passive Liquidity Points": data.passive_liquidity_points,
+    "Activity Points": data.activity_points,
+    Rank: data.rank,
+  }),
+  total: (data: Record<string, number>) => data.sonic_points,
+  rank: (data: { rank: number }) => data.rank,
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## Advanced Example with All Optional Fields
+
+From `debridge.ts`, showing an adapter with all optional fields:
+
+```typescript
+export default {
+  fetch: async (address: string) => {
+    const url = API_URL.replace("{address}", address);
+    const [s1, s2, s3] = await Promise.all([
+      fetch(url + "?season=1", { headers }),
+      fetch(url + "?season=2", { headers }),
+      fetch(url + "?season=3", { headers }),
+    ]);
+
+    return { s1: await s1.json(), s2: await s2.json(), s3: await s3.json() };
+  },
+  data: ({ s1, s2, s3 }: Record<string, Record<string, number | null>>) => {
+    const get = (obj: Record<string, number | null>) => ({
+      Rank: obj.userRank,
+      "Total Points": obj.totalPoints,
+      "Active Multiplier": obj.activeMultiplier,
+      "Final Multiplier": obj.finalMultiplier,
+      NFT: obj.nft,
+      "Origin Multiplier": obj.originMultiplier,
+    });
+
+    return { "Season 1": get(s1), "Season 2": get(s2), "Season 3": get(s3) };
+  },
+  total: ({ s3 }: { s3: { totalPoints: number } }) => s3.totalPoints,
+  rank: ({ s3 }: { s3: { userRank: number } }) => s3.userRank,
+  claimable: ({ s2 }: { s2: { totalPoints: number } }) => s2.totalPoints > 0,
+  deprecated: () => ({
+    "Season 1": 1729113600,
+    "Season 2": 1763554128,
+  }),
+  supportedAddressTypes: ["evm", "svm"],
+} as AdapterExport;
+```
+
+## Related Types
+
+- `DetailedData`: `{ [key: string]: string | number }`
+- `LabelledDetailedData`: `{ [label: string]: DetailedData }`
+- `LabelledPoints`: `{ [label: string]: number }`
+- `DeprecatedLabels`: `{ [label: string]: number }`
+- `AddressType`: `"evm" | "svm"`
+
+## See Also
+
+- [AdapterResult](/api/adapter-result) - The result type returned after running an adapter
+- [runAdapter](/api/run-adapter) - Function to execute an adapter

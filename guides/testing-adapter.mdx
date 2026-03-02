@@ -1,0 +1,343 @@
+---
+title: Testing Your Adapter
+description: Learn how to test and validate your points adapter locally
+---
+
+Testing your adapter ensures it works correctly across different address formats and returns consistent data. This guide covers local testing with the test script and automated health checks.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Install Deno">
+    The Points Adapters SDK requires [Deno](https://deno.land/) runtime.
+    
+    ```bash
+    # macOS/Linux
+    curl -fsSL https://deno.land/install.sh | sh
+    
+    # Windows
+    irm https://deno.land/install.ps1 | iex
+    ```
+  </Step>
+
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/0xPortalLabs/points-adapters.git
+    cd points-adapters
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    ```bash
+    deno install
+    ```
+  </Step>
+</Steps>
+
+## Testing a Single Adapter
+
+Use the `test.ts` script to test your adapter with a specific wallet address:
+
+```bash
+deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+### Command Format
+
+```bash
+deno run -A test.ts <adapter-path> <wallet-address> [options]
+```
+
+**Parameters:**
+- `<adapter-path>` - Path to your adapter file (e.g., `adapters/sonic.ts`)
+- `<wallet-address>` - Wallet address to test (EVM or Solana format)
+- `[options]` - Optional flags:
+  - `--skip-address-check` or `-sac` - Skip address format validation tests
+
+## Understanding Test Output
+
+When you run the test script, you'll see several sections of output:
+
+### 1. Detailed Data Table
+
+The first output shows the structured data from your adapter's `data` function:
+
+```
+┌─────────────────────────────────┬──────────────────────────────────┐
+│                                 │ data                             │
+├─────────────────────────────────┼──────────────────────────────────┤
+│ User Activity Last Detected     │ Tue Jan 28 2025 21:19:14 GMT     │
+│ Sonic Points                    │ 1234.56                          │
+│ Loyalty Multiplier              │ 1.5                              │
+│ Ecosystem Points                │ 500.0                            │
+│ Passive Liquidity Points        │ 234.56                           │
+│ Activity Points                 │ 500                              │
+│ Rank                            │ 12345                            │
+└─────────────────────────────────┴──────────────────────────────────┘
+```
+
+### 2. Total Points
+
+Shows the aggregate points from your adapter's `total` function:
+
+```
+Total Points from Adapter export:
+1234.56
+```
+
+For adapters with labelled totals (like custom terminology):
+
+```
+Total Points from Adapter export:
+┌───────────┬────────┐
+│           │ Values │
+├───────────┼────────┤
+│ Minerals  │ 1234.5 │
+└───────────┴────────┘
+```
+
+### 3. User Rank (if applicable)
+
+```
+User Rank: 12345th
+```
+
+### 4. Claimable Status (if applicable)
+
+```
+Is there an airdrop? true
+```
+
+### 5. Address Format Validation
+
+The test script automatically validates that your adapter handles different address formats consistently:
+
+```
+Testing with different address formats
+
+Format comparison results:
+┌───────────┬──────────────────────────────────────────────┬───────┐
+│           │ format                                       │ equal │
+├───────────┼──────────────────────────────────────────────┼───────┤
+│ Lowercase │ 0x3c2573b002cf51e64ab6d051814648eb3a305363 │ true  │
+│ Uppercase │ 0x3C2573B002CF51E64AB6D051814648EB3A305363 │ true  │
+│ Mixed     │ 0x3C2573b002cF51e64aB6d051814648eB3a305363 │ true  │
+│ Checksum  │ 0x3c2573B002Cf51E64Ab6D051814648eB3a305363 │ true  │
+└───────────┴──────────────────────────────────────────────┴───────┘
+```
+
+<Warning>
+  If any format shows `equal: false`, your adapter needs address normalization. See the [Creating an Adapter](/guides/creating-adapter#handling-address-formats) guide for solutions.
+</Warning>
+
+### 6. CORS Validation
+
+Checks if your API URLs will work in the browser:
+
+```
+Does the adapter work in the browser?
+Is this a good CORS URL?
+┌────┬───────────────────────────────────────────────────────────┬──────┐
+│    │ url                                                       │ good │
+├────┼───────────────────────────────────────────────────────────┼──────┤
+│ 0  │ https://www.data-openblocklabs.com/sonic/user-points-... │ true │
+└────┴───────────────────────────────────────────────────────────┴──────┘
+```
+
+<Note>
+  If `good` is `false`, make sure you wrapped your API URL with `maybeWrapCORSProxy`.
+</Note>
+
+## Testing with Different Address Types
+
+### Testing EVM Addresses
+
+```bash
+deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+### Testing Solana Addresses
+
+```bash
+deno run -A test.ts adapters/example.ts 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+```
+
+The test script automatically detects the address type and validates it against your adapter's `supportedAddressTypes`.
+
+## Skipping Address Format Checks
+
+For faster iteration during development, you can skip the address format validation:
+
+```bash
+deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363 --skip-address-check
+```
+
+<Warning>
+  Always run the full test (without `--skip-address-check`) before submitting your adapter.
+</Warning>
+
+## Adapter Health Check
+
+Test multiple adapters at once with configured addresses using the health check script:
+
+```bash
+deno run -A monitoring/check-adapters.ts
+```
+
+### Configuring Health Checks
+
+Edit `monitoring/config.json` to configure the health check:
+
+```json
+{
+  "addresses": [
+    "0x3c2573b002cf51e64ab6d051814648eb3a305363",
+    "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+  ],
+  "disabledAdapters": ["deprecated-adapter"],
+  "timeout_ms": 30000
+}
+```
+
+**Configuration Options:**
+- `addresses` - Array of wallet addresses to test against all adapters
+- `disabledAdapters` - Array of adapter names to skip during testing
+- `timeout_ms` - Timeout in milliseconds per adapter test (default: 30000)
+
+### Health Check Output
+
+The health check runs all enabled adapters against all configured addresses:
+
+```
+Testing 45 adapters with 2 address(es)
+
+Completed: 88 passed, 2 failed out of 90 tests
+
+Failures:
+  ❌ example-adapter (0x3c25...5363): Timeout after 30000ms
+  ❌ another-adapter (0x742d...0bEb): Invalid address format
+```
+
+### Discord Notifications
+
+To receive failure notifications in Discord, set the `DISCORD_WEBHOOK_URL` environment variable:
+
+```bash
+export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+deno run -A --env-file monitoring/check-adapters.ts
+```
+
+Or create a `.env` file:
+
+```bash
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+## What to Look For in Test Output
+
+<AccordionGroup>
+  <Accordion title="Verify Data Accuracy">
+    Check that the detailed data matches what you expect from the protocol's API:
+    - All relevant fields are present
+    - Values are correctly formatted (numbers, dates, strings)
+    - Labels are human-readable and clear
+  </Accordion>
+
+  <Accordion title="Validate Total Points">
+    Ensure the total points calculation is correct:
+    - For simple totals, verify the number matches the main points field
+    - For multi-season programs, check that all seasons are included
+    - For custom terminology, ensure labels match between `data` and `total`
+  </Accordion>
+
+  <Accordion title="Check Address Format Handling">
+    All format comparison results should show `equal: true`:
+    - Lowercase format
+    - Uppercase format
+    - Mixed case format
+    - Checksummed format
+    
+    If any show `false`, implement address normalization in your `fetch` function.
+  </Accordion>
+
+  <Accordion title="Confirm CORS Compatibility">
+    All API URLs should show `good: true` in the CORS validation table.
+    
+    If any show `false`, wrap those URLs with `maybeWrapCORSProxy`.
+  </Accordion>
+
+  <Accordion title="Validate Deprecated Points (if applicable)">
+    If your adapter includes deprecated points:
+    - Check that the labels match your `data` export keys
+    - Verify the timestamp is in the past
+    - Ensure the date displayed is correct
+  </Accordion>
+</AccordionGroup>
+
+## Common Testing Issues
+
+### Address Format Inconsistencies
+
+**Problem:** Different address formats return different results
+
+**Solution:** Normalize addresses in your `fetch` function:
+
+```ts
+import { getAddress } from "viem";
+
+fetch: async (address: string) => {
+  const normalizedAddress = getAddress(address).toLowerCase();
+  // Use normalizedAddress in your API call
+}
+```
+
+### CORS Errors
+
+**Problem:** CORS validation shows `good: false`
+
+**Solution:** Wrap your API URL with `maybeWrapCORSProxy`:
+
+```ts
+const API_URL = await maybeWrapCORSProxy(
+  "https://api.example.com/points/{address}"
+);
+```
+
+### Timeout Errors
+
+**Problem:** Adapter times out during testing
+
+**Solution:**
+- Check if the API is responsive
+- Verify the API URL is correct
+- Ensure your `fetch` function has proper error handling
+- Consider adding a timeout to your fetch calls
+
+### Invalid Address Type
+
+**Problem:** Error about unsupported address type
+
+**Solution:** Verify your `supportedAddressTypes` matches the addresses you're testing:
+
+```ts
+supportedAddressTypes: ["evm"]  // or ["svm"] or ["evm", "svm"]
+```
+
+## Changing the CORS Proxy
+
+For local development, you can use a custom CORS proxy:
+
+```bash
+CORS_PROXY_URL="https://your-proxy.example.com/" deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating an Adapter" icon="code" href="/guides/creating-adapter">
+    Learn how to build a new adapter from scratch
+  </Card>
+  <Card title="Custom Terminology" icon="tag" href="/guides/custom-terminology">
+    Use custom terms instead of "Points"
+  </Card>
+</CardGroup>

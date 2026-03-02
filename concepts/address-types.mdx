@@ -1,0 +1,309 @@
+---
+title: 'Address Types'
+description: 'Understanding EVM and SVM address validation and support in the Points Adapters SDK'
+---
+
+## Supported Address Types
+
+The Points Adapters SDK supports two blockchain address formats:
+
+<CardGroup cols={2}>
+  <Card title="EVM (Ethereum Virtual Machine)" icon="ethereum">
+    Addresses starting with `0x` followed by 40 hexadecimal characters. Used by Ethereum, Polygon, BSC, and other EVM-compatible chains.
+  </Card>
+  <Card title="SVM (Solana Virtual Machine)" icon="coins">
+    Base58-encoded addresses between 32-44 characters. Used by Solana and Solana-compatible chains.
+  </Card>
+</CardGroup>
+
+## The AddressType Type
+
+Defined in `utils/address.ts:1`:
+
+```typescript
+type AddressType = "evm" | "svm";
+```
+
+This union type represents the two supported blockchain ecosystems.
+
+## Address Validation
+
+### EVM Address Validation
+
+EVM addresses are validated using a regex pattern (`utils/address.ts:3-9`):
+
+```typescript
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+const isEvmAddress = (address: string): boolean =>
+  EVM_ADDRESS_REGEX.test(address);
+```
+
+**Valid EVM addresses must:**
+- Start with `0x` prefix
+- Contain exactly 40 hexadecimal characters (0-9, a-f, A-F)
+- Total length of 42 characters
+
+**Examples of valid EVM addresses:**
+
+```typescript
+"0xBd3603dF246658369C707C30E041a89Feb6eE153"
+"0x0a66d5927ffc0ee2e38a15f16f8949e697c4f439"
+"0x3c2573b002cf51e64ab6d051814648eb3a305363"
+```
+
+### SVM Address Validation
+
+SVM addresses use Base58 encoding with length constraints (`utils/address.ts:4-14`):
+
+```typescript
+const SVM_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const SVM_MIN_LENGTH = 32;
+const SVM_MAX_LENGTH = 44;
+
+const isSvmAddress = (address: string): boolean =>
+  address.length >= SVM_MIN_LENGTH &&
+  address.length <= SVM_MAX_LENGTH &&
+  SVM_ADDRESS_REGEX.test(address);
+```
+
+**Valid SVM addresses must:**
+- Contain only Base58 characters (excludes 0, O, I, l for readability)
+- Be between 32 and 44 characters long
+- Match the Base58 character set: `[1-9A-HJ-NP-Za-km-z]`
+
+**Examples of valid SVM addresses:**
+
+```typescript
+"DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK"
+"9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+```
+
+## Address Detection
+
+The SDK provides automatic address type detection (`utils/address.ts:16-20`):
+
+```typescript
+const detectAddressType = (address: string): AddressType | null => {
+  if (isEvmAddress(address)) return "evm";
+  if (isSvmAddress(address)) return "svm";
+  return null;
+};
+```
+
+**Behavior:**
+- Returns `"evm"` if the address matches EVM format
+- Returns `"svm"` if the address matches SVM format
+- Returns `null` if the address doesn't match either format
+- Checks EVM first, then SVM
+
+<Note>
+  Address type detection is non-throwing. It returns `null` for invalid addresses rather than raising an error.
+</Note>
+
+## Strict Address Type Validation
+
+For cases where you need to ensure a valid address, use `requireAddressType` (`utils/address.ts:22-29`):
+
+```typescript
+const requireAddressType = (address: string): AddressType => {
+  const x = detectAddressType(address);
+  if (!x)
+    throw new Error("Invalid address type, expected one of: ['evm', 'svm']");
+  
+  return x;
+};
+```
+
+**Behavior:**
+- Returns `"evm"` or `"svm"` for valid addresses
+- Throws an error for invalid addresses
+- Useful when address validity is a precondition
+
+**Example usage:**
+
+```typescript
+try {
+  const addressType = requireAddressType(userInput);
+  console.log(`Valid ${addressType} address`);
+} catch (error) {
+  console.error("Invalid address format");
+}
+```
+
+## Adapter Address Validation
+
+When running an adapter, the SDK automatically validates addresses (`utils/adapter.ts:32-47`):
+
+```typescript
+const runAdapter = async (adapter: AdapterExport, address: string) => {
+  const addressType = detectAddressType(address);
+  if (!addressType) {
+    throw new Error(
+      `Invalid address "${address}".` +
+        "Only EVM (0x...) and SVM (base58) addresses are supported."
+    );
+  }
+
+  const supported = adapter.supportedAddressTypes;
+  if (!supported.includes(addressType)) {
+    throw new Error(
+      `Adapter does not support "${addressType}" addresses.` +
+        `Supported types are: ${supported.join(", ")}.`
+    );
+  }
+
+  const data = await adapter.fetch(address);
+  // ...
+};
+```
+
+<Steps>
+  <Step title="Detect Address Type">
+    The SDK detects whether the address is EVM or SVM format.
+  </Step>
+  
+  <Step title="Validate Format">
+    If the address doesn't match either format, throw an error immediately.
+  </Step>
+  
+  <Step title="Check Adapter Support">
+    Verify that the adapter supports this address type via `supportedAddressTypes`.
+  </Step>
+  
+  <Step title="Execute Adapter">
+    Only if validation passes, call the adapter's `fetch` function.
+  </Step>
+</Steps>
+
+## Error Messages
+
+### Invalid Address Format
+
+```
+Invalid address "invalid123".
+Only EVM (0x...) and SVM (base58) addresses are supported.
+```
+
+**Cause:** The provided address doesn't match EVM or SVM format.
+
+**Resolution:** Ensure the address is properly formatted for the target blockchain.
+
+### Unsupported Address Type
+
+```
+Adapter does not support "svm" addresses.
+Supported types are: evm.
+```
+
+**Cause:** The adapter doesn't support the detected address type.
+
+**Resolution:** Use an address type that the adapter supports, or use a different adapter.
+
+## Declaring Address Support in Adapters
+
+Every adapter must declare which address types it supports:
+
+```typescript
+export default {
+  fetch: async (address: string) => { /* ... */ },
+  data: (data) => { /* ... */ },
+  total: (data) => { /* ... */ },
+  
+  // Declare supported types
+  supportedAddressTypes: ["evm"],  // EVM only
+  // or
+  supportedAddressTypes: ["svm"],  // SVM only
+  // or
+  supportedAddressTypes: ["evm", "svm"],  // Both
+} as AdapterExport;
+```
+
+<Tip>
+  Most adapters in the ecosystem currently support only EVM addresses, as many DeFi protocols are built on EVM-compatible chains.
+</Tip>
+
+## Address Normalization
+
+For EVM addresses, it's recommended to normalize them before making API calls:
+
+```typescript
+import { checksumAddress, getAddress } from "viem";
+
+// Using checksumAddress (from Dolomite adapter)
+address = checksumAddress(address as `0x${string}`);
+
+// Using getAddress and converting to lowercase (from Ether.fi adapter)
+const normalizedAddress = getAddress(address).toLowerCase();
+```
+
+**Why normalize?**
+- Some APIs require checksummed addresses (mixed case)
+- Others require lowercase addresses
+- Normalization prevents address-related API errors
+
+## Complete Example
+
+Here's how address validation works in practice:
+
+```typescript
+import { detectAddressType, requireAddressType } from "./utils/address.ts";
+import type { AdapterExport } from "./utils/adapter.ts";
+import { checksumAddress } from "viem";
+
+// Safe detection
+const address1 = "0xBd3603dF246658369C707C30E041a89Feb6eE153";
+const type1 = detectAddressType(address1);
+console.log(type1); // "evm"
+
+// Strict validation
+const address2 = "invalid-address";
+try {
+  const type2 = requireAddressType(address2);
+} catch (error) {
+  console.error(error.message); // "Invalid address type, expected one of: ['evm', 'svm']"
+}
+
+// In an adapter
+const myAdapter: AdapterExport = {
+  fetch: async (address: string) => {
+    // Normalize EVM address
+    const normalizedAddress = checksumAddress(address as `0x${string}`);
+    
+    // Fetch data using normalized address
+    const response = await fetch(`https://api.example.com/points/${normalizedAddress}`);
+    return response.json();
+  },
+  
+  data: (data) => ({ "Points": data.points }),
+  total: (data) => data.points,
+  
+  // Declare EVM support
+  supportedAddressTypes: ["evm"],
+};
+```
+
+## Exported Functions
+
+All address utilities are exported from `utils/address.ts:31-37`:
+
+```typescript
+export {
+  type AddressType,
+  requireAddressType,
+  detectAddressType,
+  isEvmAddress,
+  isSvmAddress,
+};
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Adapters" icon="plug" href="/concepts/adapters">
+    Learn how adapters use address type validation
+  </Card>
+  <Card title="CORS Handling" icon="globe" href="/concepts/cors-handling">
+    Understand browser compatibility for API calls
+  </Card>
+</CardGroup>

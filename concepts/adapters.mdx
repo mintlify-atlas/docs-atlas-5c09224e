@@ -1,0 +1,298 @@
+---
+title: 'Adapters'
+description: 'Learn how to build and understand Points Adapters for integrating protocol points data'
+---
+
+## What is an Adapter?
+
+An adapter is a standardized module that fetches, transforms, and exports points data from a specific protocol or platform. Each adapter implements a consistent interface that allows the SDK to query points balances across multiple protocols uniformly.
+
+Adapters abstract away the complexity of different API formats, authentication methods, and data structures, providing a clean interface for retrieving user points data.
+
+## The AdapterExport Interface
+
+Every adapter must implement the `AdapterExport` interface defined in `utils/adapter.ts:12-20`:
+
+```typescript
+type AdapterExport<T = object> = {
+  fetch: (address: string) => Promise<T>;
+  data: (data: T) => DetailedData | LabelledDetailedData;
+  total: (data: T) => number | LabelledPoints;
+  claimable?: (data: T) => boolean;
+  rank?: (data: T) => number;
+  deprecated?: (data: T) => DeprecatedLabels;
+  supportedAddressTypes: AddressType[];
+};
+```
+
+### Required Properties
+
+#### `fetch`
+
+The core data retrieval function that fetches raw points data from the protocol's API.
+
+```typescript
+fetch: (address: string) => Promise<T>
+```
+
+- **Input**: User's blockchain address (EVM or SVM format)
+- **Output**: Promise resolving to raw API response data
+- **Responsibility**: Handle API calls, authentication, error handling
+
+**Example from Sonic adapter** (`adapters/sonic.ts:21-29`):
+
+```typescript
+fetch: async (address: string) => {
+  return await (
+    await fetch(API_URL.replace("{address}", address), {
+      headers: {
+        "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+      },
+    })
+  ).json();
+}
+```
+
+#### `data`
+
+Transforms raw API response into a structured, human-readable format.
+
+```typescript
+data: (data: T) => DetailedData | LabelledDetailedData
+```
+
+- **Input**: Raw data from `fetch`
+- **Output**: Key-value pairs with display-friendly labels and values
+- **Responsibility**: Extract relevant fields, format dates, organize nested data
+
+**Example from Ether.fi adapter** (`adapters/etherfi.ts:17-61`):
+
+```typescript
+data: ({ TotalPointsSummary }) => {
+  const groups: Record<string, Record<string, number>> = {
+    "All Time Points": {},
+    "Current Points": {},
+    "Last Month Points": {},
+    "Latest 3 Months Points": {},
+  };
+
+  if (TotalPointsSummary && typeof TotalPointsSummary === "object") {
+    for (const category in TotalPointsSummary) {
+      const points = TotalPointsSummary[category];
+      for (const type in points) {
+        // Parse and organize into groups
+        // ...
+      }
+    }
+  }
+
+  return groups;
+}
+```
+
+#### `total`
+
+Calculates the total points balance for the address.
+
+```typescript
+total: (data: T) => number | LabelledPoints
+```
+
+- **Input**: Raw data from `fetch`
+- **Output**: Single number or labeled point categories
+- **Responsibility**: Sum up all relevant point values
+
+**Simple example from Sonic** (`adapters/sonic.ts:41`):
+
+```typescript
+total: (data: Record<string, number>) => data.sonic_points
+```
+
+**Labelled example from Dolomite** (`adapters/dolomite.ts:37-39`):
+
+```typescript
+total: ({ airdrop }) => ({
+  Minerals: airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+})
+```
+
+#### `supportedAddressTypes`
+
+Specifies which blockchain address formats this adapter supports.
+
+```typescript
+supportedAddressTypes: AddressType[]  // ["evm"] or ["svm"] or ["evm", "svm"]
+```
+
+- **Values**: Array containing `"evm"` and/or `"svm"`
+- **Responsibility**: Declare address type compatibility
+- **Validation**: The SDK validates addresses before calling `fetch`
+
+All example adapters support EVM addresses:
+
+```typescript
+supportedAddressTypes: ["evm"]
+```
+
+### Optional Properties
+
+#### `claimable`
+
+Indicates whether the points are currently claimable/withdrawable.
+
+```typescript
+claimable?: (data: T) => boolean
+```
+
+**Example from Dolomite** (`adapters/dolomite.ts:41`):
+
+```typescript
+claimable: ({ airdrop }) => Boolean(airdrop)
+```
+
+#### `rank`
+
+Extracts the user's leaderboard ranking if available.
+
+```typescript
+rank?: (data: T) => number
+```
+
+**Example from Sonic** (`adapters/sonic.ts:42`):
+
+```typescript
+rank: (data: { rank: number }) => data.rank
+```
+
+#### `deprecated`
+
+Marks certain point categories as deprecated with a Unix timestamp.
+
+```typescript
+deprecated?: (data: T) => DeprecatedLabels
+```
+
+**Example from Dolomite** (`adapters/dolomite.ts:42-44`):
+
+```typescript
+deprecated: () => ({
+  Minerals: 1736467200, // Jan 10th 00:00 UTC
+})
+```
+
+## Data Flow Through an Adapter
+
+When you query an adapter, the data flows through these stages:
+
+<Steps>
+  <Step title="Address Validation">
+    The SDK validates the address format and checks if the adapter supports that address type (`utils/adapter.ts:32-47`).
+  </Step>
+  
+  <Step title="Fetch Raw Data">
+    The adapter's `fetch` function retrieves raw data from the protocol's API.
+  </Step>
+  
+  <Step title="Transform Data">
+    The `data` and `total` functions process the raw response into standardized formats.
+  </Step>
+  
+  <Step title="Enhance with Metadata">
+    Optional functions (`claimable`, `rank`, `deprecated`) add additional context.
+  </Step>
+  
+  <Step title="Normalize Output">
+    The SDK normalizes all values to ensure consistent types and formats (`utils/adapter.ts:62-69`).
+  </Step>
+</Steps>
+
+## Complete Adapter Example
+
+Here's the full Dolomite adapter showing all concepts together:
+
+```typescript
+import type { AdapterExport } from "../utils/adapter.ts";
+import { checksumAddress } from "viem";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const AIRDROP_URL = await maybeWrapCORSProxy(
+  "https://api.dolomite.io/airdrop/regular/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    address = checksumAddress(address as `0x${string}`);
+    
+    const milestones = await (
+      await fetch(AIRDROP_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+    
+    return milestones;
+  },
+  
+  data: ({ airdrop }) => {
+    return {
+      Minerals: {
+        "Airdrop Amount": airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+        "Level Snapshot": airdrop?.level_snapshot ?? 0,
+      },
+    };
+  },
+  
+  total: ({ airdrop }) => ({
+    Minerals: airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+  }),
+  
+  claimable: ({ airdrop }) => Boolean(airdrop),
+  
+  deprecated: () => ({
+    Minerals: 1736467200, // Jan 10th 00:00 UTC
+  }),
+  
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## Type Definitions
+
+Key types used in adapters (`utils/adapter.ts:6-9`):
+
+```typescript
+type LabelledPoints = { [label: string]: number };
+type DetailedData = { [key: string]: string | number };
+type LabelledDetailedData = { [label: string]: DetailedData };
+type DeprecatedLabels = { [label: string]: number };
+```
+
+## Best Practices
+
+<Card title="Use CORS Proxying" icon="shield">
+  Always wrap API URLs with `maybeWrapCORSProxy` for browser compatibility. See [CORS Handling](/concepts/cors-handling) for details.
+</Card>
+
+<Card title="Validate and Normalize Addresses" icon="check">
+  Use `checksumAddress` or `getAddress` from `viem` for EVM addresses to ensure proper formatting.
+</Card>
+
+<Card title="Handle Missing Data Gracefully" icon="triangle-exclamation">
+  Always provide fallback values when API responses might be incomplete or null.
+</Card>
+
+<Card title="Include User-Agent Headers" icon="globe">
+  Add identifying headers to API requests for better tracking and debugging.
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Address Types" icon="address-card" href="/concepts/address-types">
+    Learn about EVM and SVM address validation
+  </Card>
+  <Card title="CORS Handling" icon="globe" href="/concepts/cors-handling">
+    Understand browser compatibility and CORS proxying
+  </Card>
+</CardGroup>

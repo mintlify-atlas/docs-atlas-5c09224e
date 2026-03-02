@@ -1,0 +1,297 @@
+---
+title: Installation
+description: Install and set up Points Adapters in your environment
+---
+
+## Requirements
+
+Points Adapters requires [Deno](https://deno.land/), a modern JavaScript/TypeScript runtime.
+
+### Why Deno?
+
+Points Adapters uses Deno because:
+- **Native TypeScript support** - No build step required
+- **Built-in tooling** - Formatter, linter, and test runner included
+- **Modern APIs** - Uses Web standard APIs like `fetch`
+- **Secure by default** - Explicit permissions for file, network, and environment access
+- **Fast** - Optimized for performance
+
+## Installing Deno
+
+If you don't have Deno installed, install it using one of these methods:
+
+<CodeGroup>
+```bash macOS / Linux
+curl -fsSL https://deno.land/install.sh | sh
+```
+
+```bash Windows (PowerShell)
+irm https://deno.land/install.ps1 | iex
+```
+
+```bash Homebrew (macOS)
+brew install deno
+```
+
+```bash Cargo (Rust)
+cargo install deno --locked
+```
+</CodeGroup>
+
+<Note>
+  After installation, you may need to add Deno to your PATH. Follow the instructions shown in your terminal.
+</Note>
+
+Verify your installation:
+
+```bash
+deno --version
+```
+
+You should see output like:
+```
+deno 2.x.x (release, x86_64-apple-darwin)
+v8 12.x.xxx.xx
+typescript 5.x.x
+```
+
+## Setting Up Points Adapters
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the Points Adapters repository from GitHub:
+
+    ```bash
+    git clone https://github.com/0xPortalLabs/points-adapters.git
+    ```
+  </Step>
+
+  <Step title="Navigate to Directory">
+    Change into the project directory:
+
+    ```bash
+    cd points-adapters
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    Install the required dependencies:
+
+    ```bash
+    deno install
+    ```
+
+    This command reads the `deno.json` configuration and installs all necessary packages including:
+    - `viem` - Ethereum utility functions
+    - `lodash-es` - Utility functions
+    - `text-case` - Text formatting utilities
+  </Step>
+
+  <Step title="Verify Installation">
+    Test the installation by running an adapter:
+
+    ```bash
+    deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+    ```
+
+    If everything is set up correctly, you should see the adapter output with points data.
+  </Step>
+</Steps>
+
+## Project Structure
+
+After installation, you'll have the following structure:
+
+```
+points-adapters/
+├── adapters/          # 56+ protocol adapters
+│   ├── sonic.ts
+│   ├── etherfi.ts
+│   ├── dolomite.ts
+│   └── ...
+├── utils/             # Utility functions
+│   ├── adapter.ts     # Core adapter types and runner
+│   ├── cors.ts        # CORS proxy utilities
+│   └── address.ts     # Address validation
+├── test.ts            # Single adapter testing script
+├── check-adapters.ts  # Bulk adapter health check
+├── config.json        # Configuration file
+├── deno.json          # Deno configuration
+└── package.json       # npm dependencies
+```
+
+## Configuration
+
+The `config.json` file allows you to customize adapter testing:
+
+```json
+{
+  "addresses": ["0x3c2573b002cf51e64ab6d051814648eb3a305363"],
+  "disabledAdapters": [],
+  "discordWebhookUrl": "https://discord.com/api/webhooks/...",
+  "timeout": 30000
+}
+```
+
+### Configuration Options
+
+- **`addresses`** - Array of wallet addresses to test adapters with
+- **`disabledAdapters`** - Array of adapter names to skip during health checks
+- **`discordWebhookUrl`** - Optional Discord webhook URL for failure notifications
+- **`timeout`** - Timeout in milliseconds for each adapter test (default: 30000)
+
+## Running Adapters
+
+There are two main ways to run adapters:
+
+### Test a Single Adapter
+
+Test a specific adapter with an address:
+
+<CodeGroup>
+```bash Basic Usage
+deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+```bash Skip Address Format Check
+deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363 --skip-address-check
+```
+
+```bash Short Flag
+deno run -A test.ts adapters/sonic.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363 -sac
+```
+</CodeGroup>
+
+<Note>
+  The `-A` flag grants all permissions. For production use, you should specify only the required permissions like `--allow-net` and `--allow-read`.
+</Note>
+
+### Health Check All Adapters
+
+Test all adapters with configured addresses:
+
+```bash
+deno run -A check-adapters.ts
+```
+
+This will:
+- Run all enabled adapters
+- Test with all configured addresses
+- Report success/failure for each
+- Send Discord notifications for failures (if configured)
+
+## Environment Variables
+
+You can customize behavior using environment variables:
+
+### CORS Proxy URL
+
+Change the CORS proxy URL for development:
+
+```bash
+CORS_PROXY_URL="https://your-proxy.com/" deno run -A test.ts adapters/sonic.ts 0x...
+```
+
+Default: `https://c-proxy.dorime.org/`
+
+### Fast Load Mode
+
+Skip CORS testing for faster development:
+
+```bash
+FAST_LOAD=true deno run -A test.ts adapters/sonic.ts 0x...
+```
+
+When enabled, all URLs are automatically wrapped with the CORS proxy without testing.
+
+## IDE Setup
+
+### Visual Studio Code
+
+Install the official Deno extension:
+
+1. Open VS Code
+2. Go to Extensions (Cmd/Ctrl + Shift + X)
+3. Search for "Deno"
+4. Install the official Deno extension by Denoland
+
+Enable Deno for your workspace:
+
+1. Open Command Palette (Cmd/Ctrl + Shift + P)
+2. Type "Deno: Initialize Workspace Configuration"
+3. Select "Yes" to enable Deno
+
+This will create a `.vscode/settings.json` file:
+
+```json
+{
+  "deno.enable": true,
+  "deno.lint": true,
+  "deno.unstable": false
+}
+```
+
+### Other IDEs
+
+Deno has official support for:
+- **JetBrains IDEs** (IntelliJ IDEA, WebStorm) - Install the Deno plugin
+- **Neovim** - Use `deno lsp` with your LSP client
+- **Sublime Text** - Install the LSP-Deno package
+
+See the [Deno documentation](https://deno.land/manual/getting_started/setup_your_environment) for more details.
+
+## Permissions
+
+Deno uses explicit permissions for security. Here's what Points Adapters needs:
+
+- **`--allow-net`** - Network access to fetch points from protocol APIs
+- **`--allow-read`** - Read adapter files and configuration
+- **`--allow-env`** - Access environment variables for configuration
+
+Instead of `-A` (all permissions), you can use:
+
+```bash
+deno run --allow-net --allow-read --allow-env test.ts adapters/sonic.ts 0x...
+```
+
+## Troubleshooting
+
+### "Command not found: deno"
+
+Make sure Deno is in your PATH. After installation, you may need to:
+
+```bash
+# Add to ~/.bashrc, ~/.zshrc, or equivalent
+export PATH="$HOME/.deno/bin:$PATH"
+```
+
+Then restart your terminal or run `source ~/.bashrc`.
+
+### Module resolution errors
+
+If you see import errors, try clearing the Deno cache:
+
+```bash
+deno cache --reload test.ts
+```
+
+### Permission denied errors
+
+Make sure you're granting the necessary permissions with `-A` or specific flags like `--allow-net`.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first adapter in 5 minutes
+  </Card>
+  <Card title="Creating Adapters" icon="code" href="/guides/creating-adapter">
+    Learn how to build new protocol adapters
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/adapter-export">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Testing Adapters" icon="gear" href="/guides/testing-adapter">
+    Test and validate your adapters
+  </Card>
+</CardGroup>

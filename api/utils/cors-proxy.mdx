@@ -1,0 +1,426 @@
+---
+title: "CORS Proxy Utilities"
+description: "Utilities for handling CORS restrictions when fetching data from third-party APIs in the browser"
+---
+
+## Overview
+
+When running adapters in the browser, Cross-Origin Resource Sharing (CORS) restrictions can prevent fetching data from third-party APIs. The CORS proxy utilities automatically detect and handle these restrictions by wrapping URLs with a CORS proxy when needed.
+
+All functions are exported from `utils/cors.ts`.
+
+## Why Use CORS Proxy?
+
+Adapters in the Points Adapters SDK are designed to run in the browser. Many third-party APIs don't include the `Access-Control-Allow-Origin: *` header required for browser-based requests. The CORS proxy utilities solve this by:
+
+1. Detecting when an API doesn't support CORS
+2. Automatically routing requests through a CORS proxy
+3. Maintaining compatibility with server-side environments (Deno, Node.js)
+
+## Functions
+
+### maybeWrapCORSProxy
+
+Intelligently wraps a URL with a CORS proxy only when necessary.
+
+```typescript
+async function maybeWrapCORSProxy(url: string): Promise<string>
+```
+
+**Parameters:**
+- `url` (string): The API URL to potentially wrap
+
+**Returns:**
+- `Promise<string>` - The original URL or proxy-wrapped URL
+
+**Behavior:**
+
+1. **In server environments** (Deno, Node.js): Returns the original URL unchanged
+2. **In browser with FAST_LOAD=true**: Returns proxy-wrapped URL immediately
+3. **In browser with FAST_LOAD=false** (default): 
+   - Tests if the API supports CORS by making a request
+   - Returns original URL if CORS is supported
+   - Returns proxy-wrapped URL if CORS is blocked
+
+**Example:**
+
+```typescript
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+// Top-level await to wrap the URL
+const API_URL = await maybeWrapCORSProxy(
+  "https://api.example.com/user/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    // API_URL is already wrapped if needed
+    const response = await fetch(API_URL.replace("{address}", address));
+    return response.json();
+  },
+  // ...
+};
+```
+
+**Real-world usage from Sonic adapter** (adapters/sonic.ts:4):
+
+```typescript
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://www.data-openblocklabs.com/sonic/user-points-stats?wallet_address={address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    return await (
+      await fetch(API_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+  },
+  data: (data: Record<string, number>) => ({
+    "Sonic Points": data.sonic_points,
+    "Loyalty Multiplier": data.loyalty_multiplier,
+    "Ecosystem Points": data.ecosystem_points,
+    Rank: data.rank,
+  }),
+  total: (data: Record<string, number>) => data.sonic_points,
+  rank: (data: { rank: number }) => data.rank,
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+**Real-world usage from EtherFi adapter** (adapters/etherfi.ts:5):
+
+```typescript
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+import { getAddress } from "viem";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://www.ether.fi/api/dapp/portfolio/v3/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    const normalizedAddress = getAddress(address).toLowerCase();
+    const res = await fetch(API_URL.replace("{address}", normalizedAddress), {
+      headers: { "User-Agent": "Checkpoint API (https://checkpoint.exchange)" },
+    });
+    return res.json();
+  },
+  // ...
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+---
+
+### wrapCORSProxy
+
+Directly wraps a URL with the CORS proxy without any detection.
+
+```typescript
+function wrapCORSProxy(url: string): string
+```
+
+**Parameters:**
+- `url` (string): The URL to wrap
+
+**Returns:**
+- `string` - The proxy-wrapped URL
+
+**Example:**
+
+```typescript
+import { wrapCORSProxy } from "../utils/cors.ts";
+
+const originalUrl = "https://api.example.com/data";
+const proxiedUrl = wrapCORSProxy(originalUrl);
+// Result: "https://c-proxy.dorime.org/https://api.example.com/data"
+```
+
+**When to use:**
+- You know for certain an API doesn't support CORS
+- You want to skip the CORS detection check for performance
+- You're testing CORS proxy behavior
+
+---
+
+### isGoodCORS
+
+Tests if an API endpoint supports CORS by checking response headers.
+
+```typescript
+async function isGoodCORS(url: string): Promise<boolean>
+```
+
+**Parameters:**
+- `url` (string): The API URL to test
+
+**Returns:**
+- `Promise<boolean>` - `true` if CORS is supported, `false` otherwise
+
+**Detection Logic:**
+
+1. Makes a GET request to the URL
+2. Checks if the response includes `Access-Control-Allow-Origin: *` header
+3. Returns `false` if a `TypeError` is caught (CORS blocked the request)
+4. Re-throws other error types
+
+**Example:**
+
+```typescript
+import { isGoodCORS } from "../utils/cors.ts";
+
+const goodApi = "https://api.github.com/users/octocat";
+const badApi = "https://api.internal-service.com/data";
+
+console.log(await isGoodCORS(goodApi)); // true
+console.log(await isGoodCORS(badApi));  // false
+```
+
+**Note:** Uses GET instead of HEAD because not all APIs implement HEAD requests.
+
+## Configuration
+
+### CORS_PROXY_URL
+
+The CORS proxy server URL used to wrap requests.
+
+```typescript
+const CORS_PROXY_URL: string
+```
+
+**Default value:** `"https://c-proxy.dorime.org/"`
+
+**Environment variable configuration:**
+
+You can customize the CORS proxy URL using environment variables:
+
+```bash
+# Deno
+export CORS_PROXY_URL="https://your-proxy.com/"
+
+# Vite/Browser
+VITE_CORS_PROXY_URL="https://your-proxy.com/"
+
+# Node.js
+CORS_PROXY_URL="https://your-proxy.com/"
+```
+
+**Example:**
+
+```typescript
+import { CORS_PROXY_URL } from "../utils/cors.ts";
+
+console.log(CORS_PROXY_URL); // "https://c-proxy.dorime.org/"
+```
+
+### FAST_LOAD Mode
+
+When enabled, skips CORS detection and immediately wraps all URLs with the proxy.
+
+**Environment variable:**
+
+```bash
+# Enable fast load mode
+export FAST_LOAD="true"
+
+# Disable fast load mode (default)
+export FAST_LOAD="false"
+```
+
+**Use cases:**
+- Development environments where you know CORS will be an issue
+- Reducing initial load time by skipping CORS checks
+- Testing proxy behavior
+
+**Trade-offs:**
+- **Faster**: Skips the CORS detection request
+- **Less efficient**: Routes all requests through proxy, even if CORS is supported
+
+## Implementation Details
+
+### Environment Detection
+
+The utilities detect the runtime environment to determine appropriate behavior:
+
+```typescript
+const IS_BROWSER = typeof document !== "undefined";
+```
+
+- **Browser**: Applies CORS proxy logic
+- **Server** (Deno/Node.js): Returns original URLs unchanged
+
+### Environment Variable Loading
+
+Supports multiple runtime environments:
+
+```typescript
+const maybeReadEnv = (name: string, fallback: string) =>
+  typeof Deno !== "undefined" && Deno.env.has(name)
+    ? Deno.env.get(name)                        // Deno
+    : typeof import.meta.env !== "undefined" &&
+        Object.hasOwn(import.meta.env, "VITE_" + name)
+      ? import.meta.env["VITE_" + name]          // Vite
+      : typeof process !== "undefined" && process.env && process.env[name]
+        ? process.env[name]                      // Node.js
+        : fallback;                              // Default
+```
+
+## Common Patterns
+
+### Basic Adapter with CORS Proxy
+
+```typescript
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://api.example.com/points/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    const response = await fetch(API_URL.replace("{address}", address));
+    return response.json();
+  },
+  data: (data) => ({ Points: data.points }),
+  total: (data) => data.points,
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+### Multiple API Endpoints
+
+From Harmonix adapter (adapters/harmonix.ts:4):
+
+```typescript
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const POINTS_URL = await maybeWrapCORSProxy(
+  "https://beta.harmonix.fi/api/points/leaderboard"
+);
+
+const TIER_URL = await maybeWrapCORSProxy(
+  "https://beta.harmonix.fi/api/points/tier"
+);
+
+export default {
+  fetch: async (address: string) => {
+    const [pointsRes, tierRes] = await Promise.all([
+      fetch(POINTS_URL),
+      fetch(TIER_URL),
+    ]);
+    // ...
+  },
+  // ...
+};
+```
+
+### GraphQL Endpoints
+
+From Doma adapter (adapters/doma.ts:6):
+
+```typescript
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy("https://api.doma.xyz/graphql");
+
+export default {
+  fetch: async (address: string) => {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `query { user(address: "${address}") { points } }`
+      }),
+    });
+    return response.json();
+  },
+  // ...
+};
+```
+
+## Error Handling
+
+### CORS Detection Errors
+
+```typescript
+import { isGoodCORS } from "../utils/cors.ts";
+
+try {
+  const corsSupported = await isGoodCORS(url);
+  if (!corsSupported) {
+    console.log("CORS not supported, using proxy");
+  }
+} catch (error) {
+  if (error instanceof TypeError) {
+    // CORS blocked - this is handled internally
+    console.log("CORS blocked");
+  } else {
+    // Other error - re-throw
+    throw error;
+  }
+}
+```
+
+### Proxy Failures
+
+If the CORS proxy is down or unreachable:
+
+```typescript
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const API_URL = await maybeWrapCORSProxy("https://api.example.com/data");
+
+try {
+  const response = await fetch(API_URL);
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status}`);
+  }
+  return await response.json();
+} catch (error) {
+  console.error("Failed to fetch data:", error);
+  throw error;
+}
+```
+
+## Best Practices
+
+1. **Always use top-level await**: Call `maybeWrapCORSProxy` at the module level, not inside the fetch function
+   ```typescript
+   // Good
+   const API_URL = await maybeWrapCORSProxy("https://...");
+   
+   // Bad - wraps on every request
+   fetch: async (address) => {
+     const url = await maybeWrapCORSProxy("https://...");
+   }
+   ```
+
+2. **Wrap all external APIs**: Any third-party API should be wrapped to ensure browser compatibility
+
+3. **Use FAST_LOAD in development**: Enable `FAST_LOAD=true` during development to skip CORS checks
+
+4. **Test both environments**: Verify your adapter works in both browser and server environments
+
+5. **Handle proxy failures gracefully**: The CORS proxy is a third-party service - implement proper error handling
+
+## Limitations
+
+- The CORS proxy adds latency to requests
+- Depends on the availability of the CORS proxy service
+- Some APIs may have rate limiting that applies to the proxy IP
+- POST/PUT requests with large payloads may fail through some proxies
+
+## See Also
+
+- [Creating an Adapter](/guides/create-adapter) - Complete guide to building adapters
+- [MDN: CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) - Understanding Cross-Origin Resource Sharing
+- [Browser APIs](/guides/browser-compatibility) - Ensuring browser compatibility

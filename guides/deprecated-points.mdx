@@ -1,0 +1,430 @@
+---
+title: Deprecated Points
+description: Mark points programs as expired or deprecated with timestamps
+---
+
+Some points programs expire or get deprecated after a certain date. The adapter framework supports marking points as deprecated with specific timestamps, allowing the frontend to display appropriate messaging to users.
+
+## What Are Deprecated Points?
+
+Deprecated points are rewards from programs that have:
+
+- **Expired:** The points program has ended
+- **Concluded:** Points are no longer being accumulated
+- **Migrated:** The program has moved to a new system
+- **Snapshot Taken:** Final snapshot has been taken and accumulation has stopped
+
+When you mark points as deprecated, the frontend can:
+
+- Display a deprecation notice to users
+- Show when the program ended
+- Indicate that points are no longer accumulating
+- Still display historical point balances
+
+## Basic Implementation
+
+Add a `deprecated` function to your adapter export that returns labels and their expiration timestamps:
+
+```ts
+export default {
+  fetch: async (address: string) => { /* ... */ },
+  data: (data) => { /* ... */ },
+  total: (data) => { /* ... */ },
+  deprecated: () => ({
+    Minerals: 1736467200, // Jan 10th 2025, 00:00 UTC
+  }),
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## UNIX Timestamp Format
+
+Deprecation timestamps use [UNIX time format](https://en.wikipedia.org/wiki/Unix_time) - the number of seconds since January 1, 1970, 00:00:00 UTC.
+
+### Converting Dates to UNIX Timestamps
+
+<Tabs>
+  <Tab title="JavaScript">
+    ```js
+    // Get current timestamp
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Convert specific date to timestamp
+    const date = new Date('2025-01-10T00:00:00Z');
+    const timestamp = Math.floor(date.getTime() / 1000);
+    // Result: 1736467200
+    ```
+  </Tab>
+  
+  <Tab title="Online Tools">
+    Use an online converter like:
+    - [Epoch Converter](https://www.epochconverter.com/)
+    - [Unix Timestamp](https://www.unixtimestamp.com/)
+    
+    Enter your date and get the timestamp in seconds.
+  </Tab>
+  
+  <Tab title="Command Line">
+    ```bash
+    # macOS/Linux
+    date -u -d "2025-01-10 00:00:00" +%s
+    
+    # Result: 1736467200
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Use seconds, not milliseconds. JavaScript's `Date.now()` returns milliseconds, so divide by 1000.
+</Warning>
+
+## Complete Example: Dolomite Adapter
+
+Here's the complete Dolomite adapter showing how deprecated points work with custom terminology:
+
+```ts adapters/dolomite.ts
+import type { AdapterExport } from "../utils/adapter.ts";
+import { checksumAddress } from "viem";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const AIRDROP_URL = await maybeWrapCORSProxy(
+  "https://api.dolomite.io/airdrop/regular/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    address = checksumAddress(address as `0x${string}`);
+
+    const milestones = await (
+      await fetch(AIRDROP_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+
+    return milestones;
+  },
+  data: ({
+    airdrop,
+  }: {
+    airdrop?: { amount: string; level_snapshot: number | null };
+  }) => {
+    return {
+      Minerals: {
+        "Airdrop Amount": airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+        "Level Snapshot": airdrop?.level_snapshot ?? 0,
+      },
+    };
+  },
+  total: ({ airdrop }: { airdrop?: { amount: string } }) => ({
+    Minerals: airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+  }),
+  claimable: ({ airdrop }: { airdrop?: unknown }) => Boolean(airdrop),
+  deprecated: () => ({
+    Minerals: 1736467200, // Jan 10th 2025, 00:00 UTC
+  }),
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+According to [Dolomite's documentation](https://docs.dolomite.io/minerals), Minerals expired on January 10th, 2025. The adapter marks this with the timestamp `1736467200`.
+
+## Label Matching Requirements
+
+The labels in your `deprecated` function must match the labels used in your adapter:
+
+### For Custom Terminology
+
+If you use custom terminology, the deprecated labels **must match** your data/total labels:
+
+```ts
+data: (data) => ({
+  Minerals: {
+    "Airdrop Amount": data.amount,
+  },
+})
+
+total: (data) => ({
+  Minerals: data.amount,
+})
+
+deprecated: () => ({
+  Minerals: 1736467200,  // ✅ Matches "Minerals" from data/total
+})
+```
+
+**Invalid Example:**
+
+```ts
+data: (data) => ({
+  Minerals: {
+    "Airdrop Amount": data.amount,
+  },
+})
+
+total: (data) => ({
+  Minerals: data.amount,
+})
+
+deprecated: () => ({
+  Points: 1736467200,  // ❌ Label doesn't match!
+})
+```
+
+### For Default Points Terminology
+
+If you use the default "Points" terminology (no custom labels), use the label `"Points"`:
+
+```ts
+data: (data) => ({
+  "Total Points": data.total,
+  "Bonus Points": data.bonus,
+})
+
+total: (data) => data.total
+
+deprecated: () => ({
+  Points: 1736467200,  // Use "Points" for default terminology
+})
+```
+
+<Note>
+  When your adapter doesn't use custom terminology (returns plain objects), use the label `"Points"` in the deprecated function.
+</Note>
+
+## Multiple Deprecated Programs
+
+If your protocol has multiple points programs with different expiration dates:
+
+```ts
+deprecated: () => ({
+  "Season 1": 1704067200,  // Jan 1st 2024
+  "Season 2": 1720051200,  // Jul 4th 2024
+  "Beta Points": 1730851200,  // Nov 5th 2024
+})
+```
+
+Each label must match a label from your `data` export.
+
+## Test Output
+
+When you run the test script on an adapter with deprecated points, you'll see:
+
+```bash
+deno run -A test.ts adapters/dolomite.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+### Deprecated Points Table
+
+```
+Deprecated Points:
+┌───────────┬──────────────────────────────────┐
+│           │                                  │
+├───────────┼──────────────────────────────────┤
+│ Minerals  │ Fri, 10 Jan 2025 00:00:00 GMT    │
+└───────────┴──────────────────────────────────┘
+```
+
+The timestamp is automatically converted to a human-readable UTC date string.
+
+## Validation
+
+The test script validates your deprecated points:
+
+### Label Validation
+
+Checks that deprecated labels match your data export:
+
+```
+Invalid deprecated keys found: OldPoints
+Deprecated keys must match exported data keys or use the default key `Points`.
+```
+
+### Timestamp Validation
+
+Verifies timestamps are valid and in the past:
+
+```
+Invalid deprecated dates found for keys: Minerals. 
+Dates must be valid UNIX timestamps in the past.
+```
+
+**Valid timestamps must:**
+
+1. Be positive numbers
+2. Be in seconds (not milliseconds)
+3. Represent dates in the past
+
+<Warning>
+  Timestamps in the future will fail validation. Deprecated points must have already expired.
+</Warning>
+
+## Common Timestamp Examples
+
+<AccordionGroup>
+  <Accordion title="Q1 2024 - March 31, 2024">
+    ```ts
+    deprecated: () => ({
+      "Q1 Points": 1711929600,  // Mar 31, 2024 00:00:00 UTC
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="Q2 2024 - June 30, 2024">
+    ```ts
+    deprecated: () => ({
+      "Q2 Points": 1719705600,  // Jun 30, 2024 00:00:00 UTC
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="Q3 2024 - September 30, 2024">
+    ```ts
+    deprecated: () => ({
+      "Q3 Points": 1727654400,  // Sep 30, 2024 00:00:00 UTC
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="Q4 2024 - December 31, 2024">
+    ```ts
+    deprecated: () => ({
+      "Q4 Points": 1735603200,  // Dec 31, 2024 00:00:00 UTC
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="January 10, 2025 (Dolomite)">
+    ```ts
+    deprecated: () => ({
+      Minerals: 1736467200,  // Jan 10, 2025 00:00:00 UTC
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Dynamic Deprecation
+
+You can also make deprecation dynamic based on API data:
+
+```ts
+export default {
+  fetch: async (address: string) => {
+    const data = await fetchFromAPI(address);
+    return data;
+  },
+  data: (data) => ({
+    "Season Points": data.points,
+    "Season Status": data.status,
+  }),
+  total: (data) => data.points,
+  deprecated: (data) => {
+    // Only mark as deprecated if API indicates season ended
+    if (data.status === "ended" && data.endTimestamp) {
+      return {
+        Points: data.endTimestamp,
+      };
+    }
+    return {};  // Not deprecated yet
+  },
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+<Note>
+  Returning an empty object `{}` from the `deprecated` function means nothing is deprecated.
+</Note>
+
+## How It Appears on the Frontend
+
+When points are marked as deprecated:
+
+1. **Deprecation Badge:** A "Deprecated" or "Ended" badge appears on the protocol card
+2. **Expiration Date:** The expiration date is displayed prominently
+3. **Historical Data:** Points balances are still shown but marked as final/historical
+4. **Warning Message:** Users see a message indicating the program has ended
+
+## Complete Type Definition
+
+```ts
+type DeprecatedLabels = { 
+  [label: string]: number  // UNIX timestamp in seconds
+};
+
+type AdapterExport = {
+  fetch: (address: string) => Promise<any>;
+  data: (data: any) => DetailedData | LabelledDetailedData;
+  total: (data: any) => number | LabelledPoints;
+  claimable?: (data: any) => boolean;
+  rank?: (data: any) => number;
+  deprecated?: (data: any) => DeprecatedLabels;  // Optional
+  supportedAddressTypes: AddressType[];
+};
+```
+
+## Best Practices
+
+1. **Document the Source:** Include a comment with the official announcement or documentation
+2. **Use UTC Midnight:** For clarity, use 00:00:00 UTC for the deprecation time
+3. **Match Labels Exactly:** Ensure deprecated labels match your data export labels exactly (case-sensitive)
+4. **Validate Timestamps:** Use the test script to verify your timestamps are valid
+5. **Keep Historical Data:** Even when deprecated, continue returning point balances for historical reference
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Label Mismatch Error">
+    **Error:** `Invalid deprecated keys found`
+    
+    **Solution:** Make sure your deprecated labels match the labels from your `data` function:
+    
+    ```ts
+    // If data uses "Minerals"
+    data: () => ({ Minerals: { ... } })
+    
+    // Then deprecated must use "Minerals"
+    deprecated: () => ({ Minerals: 1736467200 })
+    ```
+  </Accordion>
+
+  <Accordion title="Invalid Timestamp Error">
+    **Error:** `Invalid deprecated dates found`
+    
+    **Solution:** Verify your timestamp is:
+    - In seconds (not milliseconds)
+    - A positive number
+    - A date in the past
+    
+    ```ts
+    // Wrong - milliseconds
+    deprecated: () => ({ Points: 1736467200000 })
+    
+    // Correct - seconds
+    deprecated: () => ({ Points: 1736467200 })
+    ```
+  </Accordion>
+
+  <Accordion title="Future Date Error">
+    **Error:** Timestamp must be in the past
+    
+    **Solution:** Deprecated points must have already expired. Use a timestamp before the current date:
+    
+    ```ts
+    // Check if date is in the past
+    const timestamp = 1736467200;
+    console.log(new Date(timestamp * 1000) < new Date());  // Should be true
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Custom Terminology" icon="tag" href="/guides/custom-terminology">
+    Learn how to use custom terms with deprecated points
+  </Card>
+  <Card title="Testing Your Adapter" icon="flask" href="/guides/testing-adapter">
+    Validate your deprecated points implementation
+  </Card>
+</CardGroup>

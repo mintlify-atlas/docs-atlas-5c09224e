@@ -1,0 +1,215 @@
+---
+title: "LabelledPoints"
+description: "Type definition for categorized point totals with multiple labels"
+---
+
+## Type Definition
+
+```typescript
+type LabelledPoints = { [label: string]: number };
+```
+
+Defined in `utils/adapter.ts:6`
+
+## Description
+
+The `LabelledPoints` type represents point totals organized by category or label. This is used when a protocol tracks multiple types of points simultaneously (e.g., different seasons, point types, or reward categories).
+
+Each key is a string label describing the point category, and each value is the numeric point total for that category.
+
+## Usage in Adapters
+
+Adapters return `LabelledPoints` from the `total` function when they need to report multiple point categories:
+
+```typescript
+total: (data: T) => number | LabelledPoints
+```
+
+From `utils/adapter.ts:15`
+
+### Single Total (number)
+
+For protocols with a single point type, return a simple number:
+
+```typescript
+export default {
+  // ...
+  total: ({ totalScore }: Record<string, number>) => totalScore,
+  // ...
+} as AdapterExport;
+```
+
+From `adapters/taiko.ts:72`
+
+### Multiple Categories (LabelledPoints)
+
+For protocols with multiple point categories, return an object:
+
+```typescript
+export default {
+  // ...
+  total: (data: { xp: number }) => ({ 
+    XP: data?.xp 
+  }),
+  // ...
+} as AdapterExport;
+```
+
+From `adapters/karak.ts:42`
+
+## Real-World Examples
+
+### Season-Based Points (Harmonix)
+
+The Harmonix adapter tracks points across multiple seasons:
+
+```typescript
+total: (data: { points: POINTS_TYPE[] }) => {
+  let s1Total: number | undefined;
+  let s2Total: number | undefined;
+
+  for (const season of data.points) {
+    if (season.season_type === "season_1") {
+      let total = 0;
+      for (const session of season.data) {
+        total +=
+          session.points +
+          session.staking_points +
+          session.referral_points +
+          session.swap_points;
+      }
+      s1Total = total;
+    }
+
+    if (season.season_type === "season_2") {
+      let total = 0;
+      for (const session of season.data) {
+        total +=
+          session.points +
+          session.staking_points +
+          session.referral_points +
+          session.swap_points;
+      }
+      s2Total = total;
+    }
+  }
+
+  return {
+    "S2 Points": s2Total,
+    "S1 Points": s1Total,
+  };
+}
+```
+
+From `adapters/harmonix.ts:101-138`
+
+**Result:**
+```json
+{
+  "S2 Points": 15420,
+  "S1 Points": 8930
+}
+```
+
+### Protocol-Specific Points (Symbiotic)
+
+The Symbiotic adapter aggregates different point types:
+
+```typescript
+total: (data: { points: PointsData[] }) => ({
+  "Symbiotic Points": data.points.reduce(
+    (total, x) => total + getPoints(x),
+    0
+  ),
+})
+```
+
+From `adapters/symbiotic.ts:81-86`
+
+**Result:**
+```json
+{
+  "Symbiotic Points": 301.89688901123200151775
+}
+```
+
+### Multiple XP Categories (Galxe)
+
+The Galxe adapter returns experience points as a labelled category:
+
+```typescript
+total: (data: API_RESPONSE) => ({
+  XP: data.addressInfo.userLevel.exp,
+})
+```
+
+From `adapters/galxe.ts:76-78`
+
+**Result:**
+```json
+{
+  "XP": 152
+}
+```
+
+## When to Use LabelledPoints
+
+Use `LabelledPoints` instead of a simple number when:
+
+1. **Multiple Seasons** - The protocol has different seasons or epochs (e.g., Season 1, Season 2)
+2. **Multiple Point Types** - Different types of points exist (e.g., XP, Gold, Reputation)
+3. **Category Breakdown** - Points are categorized by activity type (e.g., Trading Points, Staking Points)
+4. **Temporal Segmentation** - Points are tracked across different time periods
+
+Use a simple `number` when:
+
+- The protocol has a single, unified point system
+- All points are of the same type and category
+
+## Processing by the SDK
+
+The SDK automatically processes `LabelledPoints` values:
+
+```typescript
+ret.total =
+  typeof ret.total !== "object" || !ret.total
+    ? parseFloat(String(ret.total)) || 0
+    : convertValuesToInt(ret.total);
+```
+
+From `utils/adapter.ts:63-66`
+
+- Simple numbers are parsed as floats
+- `LabelledPoints` objects have all values converted to integers
+- `undefined` values in categories are converted to `0`
+
+## Return Type in AdapterResult
+
+The `AdapterResult` type includes the total field:
+
+```typescript
+type AdapterResult<T = object> = {
+  __data: T;
+  data: DetailedData | LabelledDetailedData;
+  total: number | LabelledPoints;
+  claimable?: boolean;
+  rank?: number;
+  deprecated?: DeprecatedLabels;
+  supportedAddressTypes: AddressType[];
+};
+```
+
+From `utils/adapter.ts:22-30`
+
+## Best Practices
+
+1. **Consistent Naming** - Use clear, descriptive labels (e.g., "S1 Points", "S2 Points" instead of "p1", "p2")
+2. **Handle Missing Data** - Return `undefined` for categories with no data, the SDK will convert to `0`
+3. **Document Categories** - Comment what each category represents
+4. **Match DetailedData** - Ensure labels in `total` align with groups in `data` function
+
+## Related Types
+
+- [DetailedData](/api/types/detailed-data) - Used alongside `LabelledPoints` in the `data` function
+- [AdapterExport](/api/types/adapter-export) - Defines the `total` function signature
+- [AdapterResult](/api/types/adapter-result) - Contains the processed `total` value

@@ -1,0 +1,388 @@
+---
+title: Custom Terminology
+description: Use custom terms like Minerals, XP, or Drips instead of "Points"
+---
+
+Not all protocols use the term "Points" for their rewards. Some use custom terminology like Minerals, XP, Drips, or Diamonds. This guide shows you how to implement custom terminology in your adapter.
+
+## Why Custom Terminology?
+
+Protocols have unique branding and may call their reward systems by different names:
+
+- Dolomite uses **Minerals**
+- Bedrock uses **Diamonds**
+- Your protocol might use **XP**, **Drips**, **Credits**, or any other term
+
+The adapter framework supports custom terminology by allowing you to wrap your data with custom labels.
+
+## How Custom Terminology Works
+
+Instead of returning plain numbers or simple records, you wrap your data with a label that represents your custom term. This label must be consistent across both the `data` and `total` functions.
+
+## Basic Implementation
+
+<Steps>
+  <Step title="Wrap the data function with your custom label">
+    Instead of returning a flat object, nest your data under your custom term:
+
+    ```ts
+    data: (apiResponse) => {
+      return {
+        Minerals: {  // Custom label
+          "Airdrop Amount": apiResponse.airdrop.amount,
+          "Level Snapshot": apiResponse.airdrop.level_snapshot,
+        },
+      };
+    }
+    ```
+  </Step>
+
+  <Step title="Wrap the total function with the same label">
+    Use the **exact same label** in your `total` function:
+
+    ```ts
+    total: (apiResponse) => ({
+      Minerals: apiResponse.airdrop.amount  // Same label as data
+    })
+    ```
+  </Step>
+
+  <Step title="Ensure label consistency">
+    The label must match exactly (case-sensitive) between `data` and `total`:
+    
+    - `Minerals` ✅
+    - `minerals` ❌ (different case)
+    - `MINERALS` ❌ (different case)
+  </Step>
+</Steps>
+
+<Warning>
+  When `total` returns a single custom labelled object (e.g., `{ Minerals: 123 }`), `data` **must** include the same top-level key (e.g., `{ Minerals: { ... } }`). This ensures exports stay consistent.
+</Warning>
+
+## Complete Example: Dolomite Adapter
+
+Here's the complete Dolomite adapter that uses "Minerals" instead of "Points":
+
+```ts adapters/dolomite.ts
+import type { AdapterExport } from "../utils/adapter.ts";
+import { checksumAddress } from "viem";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+
+const AIRDROP_URL = await maybeWrapCORSProxy(
+  "https://api.dolomite.io/airdrop/regular/{address}"
+);
+
+export default {
+  fetch: async (address: string) => {
+    address = checksumAddress(address as `0x${string}`);
+
+    const milestones = await (
+      await fetch(AIRDROP_URL.replace("{address}", address), {
+        headers: {
+          "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+        },
+      })
+    ).json();
+
+    return milestones;
+  },
+  data: ({
+    airdrop,
+  }: {
+    airdrop?: { amount: string; level_snapshot: number | null };
+  }) => {
+    return {
+      Minerals: {
+        "Airdrop Amount": airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+        "Level Snapshot": airdrop?.level_snapshot ?? 0,
+      },
+    };
+  },
+  total: ({ airdrop }: { airdrop?: { amount: string } }) => ({
+    Minerals: airdrop ? parseFloat(airdrop.amount) ?? 0 : 0,
+  }),
+  claimable: ({ airdrop }: { airdrop?: unknown }) => Boolean(airdrop),
+  deprecated: () => ({
+    Minerals: 1736467200, // Jan 10th 00:00 UTC
+  }),
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## Example: Bedrock Adapter (Diamonds)
+
+Another example using "Diamonds" as custom terminology:
+
+```ts adapters/bedrock.ts
+import type { AdapterExport } from "../utils/adapter.ts";
+import { maybeWrapCORSProxy } from "../utils/cors.ts";
+import {
+  convertKeysToStartCase,
+  convertValuesToNormal,
+} from "../utils/object.ts";
+
+const API_URL = await maybeWrapCORSProxy(
+  "https://app.bedrock.technology/api/v2/bedrock/third-protocol/points"
+);
+
+export default {
+  fetch: async (address: string) => {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      body: JSON.stringify({ address: address.toLowerCase() }),
+      headers: {
+        "User-Agent": "Checkpoint API (https://checkpoint.exchange)",
+      },
+    });
+    return (await res.json()).data;
+  },
+  data: (data: Record<string, string>) => {
+    const { address: _address, ...rest } = data;
+    return { 
+      Diamonds: convertKeysToStartCase(convertValuesToNormal(rest)) 
+    };
+  },
+  total: (data: Record<string, string>) => ({
+    Diamonds: parseFloat(data.totalPoint) || 0,
+  }),
+  supportedAddressTypes: ["evm"],
+} as AdapterExport;
+```
+
+## How It Appears in Output
+
+When you test an adapter with custom terminology, the output reflects your custom labels:
+
+### Data Output
+
+```
+┌─────────────────┬───────────┐
+│                 │ Minerals  │
+├─────────────────┼───────────┤
+│ Airdrop Amount  │ 1234.5    │
+│ Level Snapshot  │ 5         │
+└─────────────────┴───────────┘
+```
+
+### Total Output
+
+```
+Total Points from Adapter export:
+┌───────────┬────────┐
+│           │ Values │
+├───────────┼────────┤
+│ Minerals  │ 1234.5 │
+└───────────┴────────┘
+```
+
+Notice how "Minerals" appears instead of "Points" throughout the output.
+
+## Multiple Custom Terms
+
+You can use multiple custom terms in the same adapter if your protocol has different types of rewards:
+
+```ts
+data: (apiResponse) => ({
+  XP: {
+    "Combat XP": apiResponse.combat_xp,
+    "Trading XP": apiResponse.trading_xp,
+  },
+  Crystals: {
+    "Purple Crystals": apiResponse.purple_crystals,
+    "Blue Crystals": apiResponse.blue_crystals,
+  },
+})
+```
+
+With corresponding totals:
+
+```ts
+total: (apiResponse) => ({
+  XP: apiResponse.total_xp,
+  Crystals: apiResponse.total_crystals,
+})
+```
+
+## Validation Rules
+
+<AccordionGroup>
+  <Accordion title="Label Consistency">
+    The test script validates that custom labels in `total` exist in `data`:
+    
+    **Valid:**
+    ```ts
+    data: () => ({ Minerals: { Amount: 100 } })
+    total: () => ({ Minerals: 100 })
+    ```
+    
+    **Invalid:**
+    ```ts
+    data: () => ({ Diamonds: { Amount: 100 } })
+    total: () => ({ Minerals: 100 })  // Label mismatch!
+    ```
+  </Accordion>
+
+  <Accordion title="Single Custom Label Rule">
+    When using a single custom term (not "Points"), it must appear in both `data` and `total`:
+    
+    **Valid:**
+    ```ts
+    data: () => ({ XP: { Total: 100 } })
+    total: () => ({ XP: 100 })
+    ```
+    
+    **Invalid:**
+    ```ts
+    data: () => ({ Combat: 50, Trading: 50 })
+    total: () => ({ XP: 100 })  // XP not in data keys!
+    ```
+  </Accordion>
+
+  <Accordion title="Case Sensitivity">
+    Labels are case-sensitive and must match exactly:
+    
+    **Valid:**
+    ```ts
+    data: () => ({ Minerals: { Amount: 100 } })
+    total: () => ({ Minerals: 100 })
+    ```
+    
+    **Invalid:**
+    ```ts
+    data: () => ({ Minerals: { Amount: 100 } })
+    total: () => ({ minerals: 100 })  // Case mismatch!
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Testing Custom Terminology
+
+When you run the test script, it validates your custom terminology:
+
+```bash
+deno run -A test.ts adapters/dolomite.ts 0x3c2573b002cf51e64ab6d051814648eb3a305363
+```
+
+The test script will:
+
+1. Display your custom labels in the data table
+2. Show your custom labels in the total output
+3. Validate that labels match between `data` and `total`
+4. Report any label mismatches as errors
+
+### Validation Output
+
+If labels don't match, you'll see an error:
+
+```
+Invalid total key found: Minerals
+Custom total keys must also exist in the data export keys.
+```
+
+## Common Terminology Examples
+
+<Tabs>
+  <Tab title="Points (Default)">
+    Standard implementation without custom terminology:
+    
+    ```ts
+    data: (data) => ({
+      "Total Points": data.total,
+      "Bonus Points": data.bonus,
+    })
+    
+    total: (data) => data.total
+    ```
+  </Tab>
+  
+  <Tab title="Minerals">
+    ```ts
+    data: (data) => ({
+      Minerals: {
+        "Total Minerals": data.total,
+        "Bonus Minerals": data.bonus,
+      },
+    })
+    
+    total: (data) => ({
+      Minerals: data.total,
+    })
+    ```
+  </Tab>
+  
+  <Tab title="XP">
+    ```ts
+    data: (data) => ({
+      XP: {
+        "Total XP": data.total_xp,
+        "Level": data.level,
+      },
+    })
+    
+    total: (data) => ({
+      XP: data.total_xp,
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Drips">
+    ```ts
+    data: (data) => ({
+      Drips: {
+        "Accumulated Drips": data.drips,
+        "Drip Rate": data.rate,
+      },
+    })
+    
+    total: (data) => ({
+      Drips: data.drips,
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Diamonds">
+    ```ts
+    data: (data) => ({
+      Diamonds: {
+        "Total Diamonds": data.total,
+        "Tier": data.tier,
+      },
+    })
+    
+    total: (data) => ({
+      Diamonds: data.total,
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Frontend Display
+
+Your custom terminology will be reflected on the frontend:
+
+- **Detail View:** Shows your custom label as a section header
+- **Total View:** Displays your custom term instead of "Points"
+- **Leaderboard:** Uses your custom terminology in rankings
+
+<Note>
+  Custom terminology is purely cosmetic and doesn't affect the underlying data structure or functionality.
+</Note>
+
+## Best Practices
+
+1. **Use Protocol Branding:** Match the terminology your protocol uses in its official documentation and UI
+2. **Be Consistent:** Use the exact same label (including capitalization) in all functions
+3. **Keep It Simple:** Use clear, recognizable terms that users will understand
+4. **Test Thoroughly:** Run the test script to validate your label consistency
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deprecated Points" icon="clock" href="/guides/deprecated-points">
+    Mark points programs as deprecated with timestamps
+  </Card>
+  <Card title="Testing Your Adapter" icon="flask" href="/guides/testing-adapter">
+    Validate your custom terminology implementation
+  </Card>
+</CardGroup>

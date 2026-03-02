@@ -1,0 +1,298 @@
+---
+title: "DetailedData"
+description: "Type definitions for detailed point breakdowns and data export"
+---
+
+## Type Definitions
+
+```typescript
+type DetailedData = { [key: string]: string | number };
+type LabelledDetailedData = { [label: string]: DetailedData };
+```
+
+Defined in `utils/adapter.ts:7-8`
+
+## Description
+
+`DetailedData` and `LabelledDetailedData` define the structure for detailed point breakdowns returned by the `data` function in adapters. These types enable rich data export including metadata, point breakdowns, rankings, and other contextual information.
+
+### DetailedData
+
+A flat object containing key-value pairs where:
+- Keys are string labels describing the data point
+- Values are either strings (for metadata like usernames, tiers) or numbers (for points, ranks, balances)
+
+### LabelledDetailedData
+
+A nested object that groups `DetailedData` by category labels. This structure is used when data should be organized into logical groups or categories.
+
+## Usage in Adapters
+
+The `data` function in an adapter must return either `DetailedData` or `LabelledDetailedData`:
+
+```typescript
+data: (data: T) => DetailedData | LabelledDetailedData
+```
+
+From `utils/adapter.ts:14`
+
+## Examples
+
+### Flat Structure (DetailedData)
+
+The Taiko adapter returns a flat structure with all data at the top level:
+
+```typescript
+data: ({
+  multiplier = 1,
+  totalScore = 0,
+  breakdown = [],
+  total = 0,
+  score = 0,
+  rank = 0,
+}: Record<string, number | Array<Record<string, string | number>>>) => {
+  const events = Array.isArray(breakdown)
+    ? breakdown.reduce(
+        (
+          acc: Record<string, number>,
+          item: Record<string, string | number>
+        ) => {
+          const event = item.event as string;
+          acc[`${event} Points`] = getPoints(event);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    : {};
+
+  return convertKeysToStartCase({
+    multiplier,
+    totalScore,
+    score,
+    total,
+    rank,
+    ...events,
+  });
+}
+```
+
+From `adapters/taiko.ts:36-71`
+
+**Result:**
+```json
+{
+  "Multiplier": 1,
+  "Total Score": 7640957.241653256,
+  "Score": 7640957.241653256,
+  "Total": 411820,
+  "Rank": 3,
+  "Transaction Points": 12347489.875,
+  "Transaction Value Points": 12346348.375,
+  "Frozen Bonus Points": 7032.24336
+}
+```
+
+### Nested Structure (LabelledDetailedData)
+
+The Galxe adapter returns nested data grouped by category:
+
+```typescript
+data: (data: API_RESPONSE) => {
+  const gold = data.addressInfo.userLevel.gold;
+  const level = data.addressInfo.userLevel.level.value;
+  return {
+    XP: {
+      Username: data.addressInfo.username,
+      XP: data.addressInfo.userLevel.exp,
+      Level: level,
+      Gold: gold === 81991 && level === 1 ? 0 : gold,
+    },
+  };
+}
+```
+
+From `adapters/galxe.ts:63-75`
+
+**Result:**
+```json
+{
+  "XP": {
+    "Username": "evxlution",
+    "XP": 152,
+    "Level": 1,
+    "Gold": 0
+  }
+}
+```
+
+### Complex Nested Structure (Symbiotic)
+
+The Symbiotic adapter creates multiple nested groups:
+
+```typescript
+data: (data: { points: PointsData[]; totalDepositUsd: number }) => {
+  const pointsData = Object.fromEntries(
+    data.points.map((x) => [`${x.meta.name} Points`, getPoints(x)])
+  );
+  return {
+    "Symbiotic Points": {
+      ...pointsData,
+      "Total Deposit (USD)": data.totalDepositUsd,
+    },
+  };
+}
+```
+
+From `adapters/symbiotic.ts:70-80`
+
+**Result:**
+```json
+{
+  "Symbiotic Points": {
+    "Symbiotic Points": 10850.370917202774,
+    "Legacy Points": 301.89688901123200151775,
+    "Total Deposit (USD)": 233.39078611461593
+  }
+}
+```
+
+### Time-Based Groups (EtherFi)
+
+The EtherFi adapter organizes points by time periods:
+
+```typescript
+data: ({
+  TotalPointsSummary,
+}: {
+  TotalPointsSummary: Record<string, Record<string, number>>;
+}) => {
+  const groups: Record<string, Record<string, number>> = {
+    "All Time Points": {},
+    "Current Points": {},
+    "Last Month Points": {},
+    "Latest 3 Months Points": {},
+  };
+
+  // ... processing logic ...
+
+  return groups;
+}
+```
+
+From `adapters/etherfi.ts:17-61`
+
+**Result:**
+```json
+{
+  "All Time Points": {
+    "Liquid": 1234.56,
+    "Staked": 789.12,
+    "Loyalty": 456.78
+  },
+  "Current Points": {
+    "Liquid": 234.56,
+    "Staked": 89.12,
+    "Loyalty": 56.78
+  },
+  "Last Month Points": {
+    "Liquid": 100.00,
+    "Staked": 50.00,
+    "Loyalty": 25.00
+  },
+  "Latest 3 Months Points": {
+    "Liquid": 400.00,
+    "Staked": 200.00,
+    "Loyalty": 100.00
+  }
+}
+```
+
+## When to Use Each Structure
+
+### Use DetailedData (Flat) When:
+
+1. All data points are at the same conceptual level
+2. No natural grouping or categorization exists
+3. Simple point breakdowns with metadata
+4. Single-dimension data (e.g., just points breakdown)
+
+### Use LabelledDetailedData (Nested) When:
+
+1. Data has clear categorical groups (e.g., seasons, time periods)
+2. Multiple types of information need separation (e.g., XP vs Profile data)
+3. Hierarchical organization improves clarity
+4. Different point categories need their own breakdowns
+
+## Value Processing
+
+The SDK automatically normalizes all values in the `data` object:
+
+```typescript
+ret.data = convertValuesToNormal(ret.data);
+```
+
+From `utils/adapter.ts:62`
+
+This converts:
+- BigInt values to numbers
+- String numbers to numbers
+- Ensures consistent numeric formatting
+
+## Including Metadata
+
+Both structures support string values for metadata:
+
+```typescript
+{
+  "Username": "evxlution",    // string metadata
+  "Tier": "Silver",           // string metadata
+  "XP": 152,                   // numeric data
+  "Level": 5,                  // numeric data
+  "Tenure Achieved": 30        // numeric data
+}
+```
+
+From `adapters/harmonix.ts:96-97`
+
+## Best Practices
+
+1. **Consistent Naming** - Use clear, descriptive keys (e.g., "Total Points" not "tp")
+2. **Proper Grouping** - Group related data together in nested structures
+3. **Include Context** - Add relevant metadata (usernames, tiers, ranks)
+4. **Match Total Labels** - Ensure category names match those in `LabelledPoints`
+5. **Handle Missing Data** - Return empty objects or undefined for missing categories
+6. **Use Number Types** - Prefer numbers over string representations of numbers
+
+## Return Type in AdapterResult
+
+The processed data appears in the `AdapterResult`:
+
+```typescript
+type AdapterResult<T = object> = {
+  __data: T;
+  data: DetailedData | LabelledDetailedData;
+  total: number | LabelledPoints;
+  claimable?: boolean;
+  rank?: number;
+  deprecated?: DeprecatedLabels;
+  supportedAddressTypes: AddressType[];
+};
+```
+
+From `utils/adapter.ts:22-30`
+
+## Data Export Use Cases
+
+`DetailedData` and `LabelledDetailedData` enable:
+
+1. **Dashboard Display** - Rich UI showing point breakdowns
+2. **CSV/Excel Export** - Structured data for spreadsheet analysis
+3. **API Responses** - Complete point history and metadata
+4. **Historical Tracking** - Time-series data across seasons/epochs
+5. **User Profiles** - Comprehensive user statistics and achievements
+
+## Related Types
+
+- [LabelledPoints](/api/types/labelled-points) - Used alongside for the `total` function
+- [AdapterExport](/api/types/adapter-export) - Defines the `data` function signature
+- [AdapterResult](/api/types/adapter-result) - Contains the processed `data` value
