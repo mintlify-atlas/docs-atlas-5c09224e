@@ -1,0 +1,97 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Points Adapters",
+  "projectDescription": "A TypeScript library providing unified adapters to fetch and normalize points data from 56+ DeFi protocols across EVM and Solana chains.",
+  "theme": "mint",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/adapters",
+              "concepts/address-types",
+              "concepts/cors-handling"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-adapter",
+              "guides/testing-adapter",
+              "guides/custom-terminology",
+              "guides/deprecated-points"
+            ]
+          },
+          {
+            "group": "Available Adapters",
+            "pages": [
+              "adapters/overview",
+              "adapters/list"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/adapter-export",
+              "api/adapter-result",
+              "api/run-adapter"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types/address-type",
+              "api/types/labelled-points",
+              "api/types/detailed-data"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utils/detect-address-type",
+              "api/utils/cors-proxy"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Unified adapter interface for 56+ DeFi protocols",
+    "Support for both EVM (0x...) and Solana (base58) addresses",
+    "Browser-compatible with automatic CORS proxy handling",
+    "Standardized data normalization and validation",
+    "Custom points terminology support",
+    "Deprecated points tracking",
+    "Built-in testing and health check utilities"
+  ],
+  "publicApiSurface": [
+    "AdapterExport - Main adapter interface type",
+    "AdapterResult - Return type for adapter execution",
+    "runAdapter(adapter, address) - Execute an adapter with validation",
+    "detectAddressType(address) - Detect if address is EVM or SVM",
+    "maybeWrapCORSProxy(url) - Wrap URLs with CORS proxy",
+    "AddressType - Union type 'evm' | 'svm'",
+    "LabelledPoints - Type for categorized point values",
+    "DetailedData - Type for detailed point breakdowns"
+  ]
+}
